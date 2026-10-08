@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtTime, todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtTime, todayISO, useCreate, useList, useSettings, useUpdate, type Doc } from '@/lib/hooks'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -70,6 +70,7 @@ export function AppointmentDialog({
   const { data: patientData } = useList('patients', { q: patientQuery, limit: 8 }, { enabled: open })
   const { data: dayAppts } = useList('appointments', { date: form.date, limit: 200 }, { enabled: open })
   const { data: treatments } = useList('treatment_masters', { limit: 100 }, { enabled: open })
+  const { data: clinicSettings } = useSettings()
 
   const create = useCreate('appointments', { invalidate: ['dashboard'] })
   const update = useUpdate('appointments', { invalidate: ['dashboard'] })
@@ -91,7 +92,7 @@ export function AppointmentDialog({
           ...f, patientId: '', patient: '', patientCode: '', treatment: '', notes: '',
           date: defaults?.date ?? todayISO(), time: defaults?.time ?? '10:00',
           doctor: defaults?.doctor ?? DOCTORS[0], chair: defaults?.chair ?? CHAIRS[0],
-          duration: '30 min',
+          duration: `${clinicSettings?.apptDuration || '30'} min`,
         }))
       }
     }

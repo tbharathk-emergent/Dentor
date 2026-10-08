@@ -15,6 +15,7 @@ def crud_router(
     name: str,
     search_fields: list[str],
     *,
+    validate=None,  # async (tdb, payload, existing_doc | None) -> None; may mutate payload
     code_field: Optional[str] = None,
     code_prefix: str = "",
     code_start: int = 1,
@@ -61,6 +62,8 @@ def crud_router(
         col = tdb[name]
         for key in ("id", "_id", "clinic_id"):
             payload.pop(key, None)
+        if validate:
+            await validate(tdb, payload, None)
         payload["created_at"] = now_iso()
         payload["updated_at"] = payload["created_at"]
         payload["created_by"] = user.get("email")
@@ -75,6 +78,11 @@ def crud_router(
         col = tdb[name]
         for key in ("id", "_id", "clinic_id"):
             payload.pop(key, None)
+        if validate:
+            existing = await col.find_one({"_id": to_object_id(item_id)})
+            if not existing:
+                raise HTTPException(status_code=404, detail="Record not found")
+            await validate(tdb, payload, existing)
         payload["updated_at"] = now_iso()
         result = await col.update_one({"_id": to_object_id(item_id)}, {"$set": payload})
         if result.matched_count == 0:

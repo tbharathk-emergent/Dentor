@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from ..auth import SUPER_ADMIN_ROLE, hash_password, is_super_admin, require_super_admin
 from ..db import db
+from ..rules import check_password_strength, clinic_settings
 from ..seed import seed_reference
 from ..tenancy import TenantDB
 from ..util import next_sequence, now_iso, serialize, text_filter, to_object_id
@@ -70,9 +71,10 @@ async def _get_clinic_user(user_id: str) -> dict:
     return user
 
 
-def _check_password(password: str):
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+async def _check_password(password: str, clinic_id: str):
+    """Respect the target clinic's 'Strong password policy' setting (defaults to strong)."""
+    settings = await clinic_settings(TenantDB(db, clinic_id))
+    check_password_strength(password, bool(settings.get("strongPassword", True)))
 
 
 def _check_role(role: str) -> str:
@@ -86,7 +88,7 @@ async def _new_user_doc(clinic_id: str, name: str, email: str, password: str, ro
     name, email = name.strip(), email.lower().strip()
     if not name or "@" not in email:
         raise HTTPException(status_code=400, detail="Enter the user's name and a valid email.")
-    _check_password(password)
+    await _check_password(password, clinic_id)
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail=f"{email} already has a Dentor login.")
     now = now_iso()
@@ -202,7 +204,7 @@ async def update_clinic_user(user_id: str, body: UserUpdate):
 @router.post("/users/{user_id}/reset-password")
 async def reset_clinic_user_password(user_id: str, body: PasswordReset):
     user = await _get_clinic_user(user_id)
-    _check_password(body.new_password)
+    await _check_password(body.new_password, user.get("clinic_id", ""))
     await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {"password_hash": hash_password(body.new_password), "password_changed_at": now_iso()}},

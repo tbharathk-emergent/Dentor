@@ -3,27 +3,41 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .config import CORS_ORIGINS, IS_PROD, SEED_DEMO, validate_production_config
 from .db import db
 from .migrate import ensure_tenancy
 from .routers import billing, misc, platform
 from .routers.auth_router import router as auth_router
 from .routers.resource import crud_router
+from .rules import validate_appointment, validate_clinical_record, validate_invoice
+from .security import BodySizeLimitMiddleware
 from .seed import ensure_seed
 from .tenancy import TenantDB
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    demo_clinic_id = await ensure_tenancy(db, [name for name, _, _ in RESOURCES])
-    await ensure_seed(TenantDB(db, demo_clinic_id))
+    validate_production_config()
+    demo_clinic_id = await ensure_tenancy(db, [name for name, _, _ in RESOURCES], create_demo=SEED_DEMO)
+    if SEED_DEMO and demo_clinic_id:
+        await ensure_seed(TenantDB(db, demo_clinic_id))
     yield
 
 
-app = FastAPI(title="Dentor API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Dentor API",
+    version="1.0.0",
+    lifespan=lifespan,
+    # The interactive API docs are a development tool; keep them off the production surface.
+    docs_url=None if IS_PROD else "/docs",
+    redoc_url=None,
+    openapi_url=None if IS_PROD else "/openapi.json",
+)
 
+app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,10 +51,10 @@ app.include_router(platform.router)
 # (resource, search fields, code field config)
 RESOURCES = [
     ("patients", ["name", "code", "mobile", "treatment", "doctor", "email"], dict(code_field="code", code_prefix="DEN-", code_start=1050)),
-    ("appointments", ["patient", "code", "treatment", "doctor", "date", "chair"], dict(code_field="code", code_prefix="APT-", code_start=5001)),
+    ("appointments", ["patient", "code", "treatment", "doctor", "date", "chair"], dict(code_field="code", code_prefix="APT-", code_start=5001, validate=validate_appointment)),
     ("consultants", ["name", "code", "specialty", "location"], dict(code_field="code", code_prefix="CON-", code_start=107)),
     ("consultant_bookings", ["patient", "consultant", "code", "reason"], dict(code_field="code", code_prefix="CNS-", code_start=2001)),
-    ("invoices", ["number", "patient", "patientCode", "treatment", "doctor"], dict(code_field="number", code_prefix="CLN-INV-", code_start=2849)),
+    ("invoices", ["number", "patient", "patientCode", "treatment", "doctor"], dict(code_field="number", code_prefix="CLN-INV-", code_start=2849, validate=validate_invoice)),
     ("payments", ["receipt", "patient", "invoice", "mode"], {}),
     ("workflow_records", ["patient", "reference", "type", "code"], {}),
     ("prescriptions", ["patient", "code", "doctor", "diagnosis"], dict(code_field="code", code_prefix="RX-", code_start=1001)),
@@ -75,8 +89,8 @@ RESOURCES = [
     ("saved_reports", ["name", "source"], {}),
     ("patient_files", ["patientId", "name", "category"], {}),
     ("activities", ["message", "type", "user"], {}),
-    ("patient_treatments", ["patientId", "name", "doctor", "status"], {}),
-    ("patient_procedures", ["patientId", "name", "doctor", "status"], {}),
+    ("patient_treatments", ["patientId", "name", "doctor", "status"], dict(validate=validate_clinical_record)),
+    ("patient_procedures", ["patientId", "name", "doctor", "status"], dict(validate=validate_clinical_record)),
     ("patient_consents", ["patientId", "title", "status"], {}),
 ]
 

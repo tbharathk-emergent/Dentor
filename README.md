@@ -36,9 +36,22 @@ Sign in with **admin@dentor.in / Dentor@2026** (demo clinic admin), or
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `DENTOR_ENV` | `development` | `production` enables fail-fast safety checks, disables `/docs` |
 | `MONGO_URL` | `mongodb://127.0.0.1:27017` | MongoDB connection |
 | `DB_NAME` | `dentor` | Database name |
-| `JWT_SECRET` | dev value | Change in production |
+| `JWT_SECRET` | dev value | **Required in production** (≥32 chars, e.g. `openssl rand -hex 32`) |
+| `JWT_EXPIRE_MINUTES` | `720` | Token lifetime (clinics with "Session timeout" on get 30 min) |
+| `SUPER_ADMIN_EMAIL` | `superadmin@dentor.in` | Platform admin login |
+| `SUPER_ADMIN_PASSWORD` | — | **Required in production**; also rotates a defaulted account at startup |
+| `SEED_DEMO` | `1` in dev, `0` in production | Demo clinic + demo data on first start |
+| `CORS_ORIGINS` | localhost dev origins | Only needed if the frontend is served from another origin |
+| `MAX_BODY_BYTES` | `16777216` | Request body cap (file uploads are base64 JSON) |
+
+Production boot refuses to start with a default/weak `JWT_SECRET` or a super admin still on
+the default password, and seeds no demo data. Login endpoints are rate limited (30/min per IP,
+plus a 5-failure lockout per IP+account). Business rules from Settings — double booking,
+partial payments, consent-before-treatment, strong passwords, session timeout, financial lock —
+are enforced by the API, not just the UI.
 
 Demo data is seeded only into empty collections — user data is never overwritten.
 To reset: drop the `dentor` database and restart the backend.

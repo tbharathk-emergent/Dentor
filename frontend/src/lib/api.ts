@@ -65,7 +65,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  if (res.status === 401 && !path.includes('/auth/login')) {
+  // A 401 means the session is gone — except on auth endpoints themselves, where it
+  // just means a wrong password (login, verify-password) and must not log the user out.
+  if (res.status === 401 && !path.includes('/api/auth/')) {
     clearSession()
     if (!location.pathname.startsWith('/login')) location.assign('/login')
     throw new ApiError(401, 'Session expired')

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user
+from ..rules import clinic_settings
 from ..tenancy import TenantDB, get_tenant
 from ..util import next_sequence, now_iso, serialize, to_object_id
 
@@ -37,6 +38,15 @@ async def record_payment(body: PaymentBody, user: dict = Depends(get_current_use
         balance = float(inv.get("balance", inv.get("total", 0)))
         if body.amount > balance + 0.01:
             raise HTTPException(status_code=400, detail=f"Amount exceeds invoice balance (₹{balance:,.0f}).")
+        settings = await clinic_settings(tdb)
+        if not settings.get("partialPayments", True) and body.amount < balance - 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Partial payments are disabled for this clinic — collect the full balance of "
+                    f"₹{balance:,.0f}, or enable 'Partial payments' in Settings."
+                ),
+            )
         new_paid = float(inv.get("paid", 0)) + body.amount
         new_balance = max(0.0, float(inv.get("total", 0)) - new_paid)
         status = "Paid" if new_balance <= 0.01 else "Partial"

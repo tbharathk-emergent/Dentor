@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Eye,
   EyeOff,
+  Lock,
   IndianRupee,
   Megaphone,
   Pill,
@@ -18,15 +19,19 @@ import {
   Users,
   Clock,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { fmtINR, fmtTime, todayISO, useUpdate } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Dialog } from '@/components/ui/Dialog'
+import { Field, Input } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Avatar, EmptyState, Skeleton, StatCard } from '@/components/ui/bits'
 
 interface DashboardData {
+  financialLock?: boolean
   patients: number
   newPatientsThisMonth: number
   consultants: number
@@ -53,10 +58,14 @@ interface DashboardData {
   }[]
 }
 
+const UNLOCK_KEY = 'dentor.moneyUntil'
+const UNLOCK_MS = 5 * 60 * 1000 // locked clinics re-mask financials after 5 minutes
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [showMoney, setShowMoney] = useState(() => sessionStorage.getItem('dentor.money') === '1')
+  const [unlockOpen, setUnlockOpen] = useState(false)
 
   const { data, isLoading, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
@@ -71,8 +80,30 @@ export default function Dashboard() {
 
   const updateAppt = useUpdate('appointments', { invalidate: ['dashboard'] })
 
-  const money = (v: number | undefined) => (showMoney ? fmtINR(v) : '₹ •••••')
+  // 'Financial lock' (Settings): masked by default, revealed only after password
+  // re-verification, and re-masked automatically after 5 minutes.
+  const financialLock = data?.financialLock ?? false
+  const [, forceTick] = useState(0)
+  const unlockExpiry = Number(sessionStorage.getItem(UNLOCK_KEY) || 0)
+  const unlocked = financialLock ? unlockExpiry > Date.now() : showMoney
+  useEffect(() => {
+    // Re-render when the 5-minute unlock window lapses so figures re-mask on their own.
+    if (!financialLock || unlockExpiry <= Date.now()) return
+    const t = setTimeout(() => forceTick((n) => n + 1), unlockExpiry - Date.now() + 50)
+    return () => clearTimeout(t)
+  }, [financialLock, unlockExpiry])
+
+  const money = (v: number | undefined) => (unlocked ? fmtINR(v) : '₹ •••••')
   const toggleMoney = () => {
+    if (financialLock) {
+      if (unlocked) {
+        sessionStorage.removeItem(UNLOCK_KEY)
+        forceTick((n) => n + 1)
+      } else {
+        setUnlockOpen(true)
+      }
+      return
+    }
     const next = !showMoney
     setShowMoney(next)
     sessionStorage.setItem('dentor.money', next ? '1' : '0')
@@ -109,9 +140,18 @@ export default function Dashboard() {
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={toggleMoney}>
-          {showMoney ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          {showMoney ? 'Hide financials' : 'Show financials'}
+          {unlocked ? <EyeOff className="h-4 w-4" /> : financialLock ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          {unlocked ? 'Hide financials' : financialLock ? 'Unlock financials' : 'Show financials'}
         </Button>
+        <UnlockFinancialsDialog
+          open={unlockOpen}
+          onClose={() => setUnlockOpen(false)}
+          onUnlocked={() => {
+            sessionStorage.setItem(UNLOCK_KEY, String(Date.now() + UNLOCK_MS))
+            setUnlockOpen(false)
+            forceTick((n) => n + 1)
+          }}
+        />
       </div>
 
       {/* Quick actions — the receptionist's main verbs */}
@@ -280,5 +320,66 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+function UnlockFinancialsDialog({
+  open,
+  onClose,
+  onUnlocked,
+}: {
+  open: boolean
+  onClose: () => void
+  onUnlocked: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open) setPassword('')
+  }, [open])
+
+  const submit = async (e: { preventDefault: () => void }) => {
+    e.preventDefault()
+    if (!password) return
+    setBusy(true)
+    try {
+      await api.post('/api/auth/verify-password', { password })
+      toast.success('Financials unlocked for 5 minutes')
+      onUnlocked()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Incorrect password')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Unlock financials"
+      subtitle="This clinic locks revenue figures. Confirm your password to reveal them for 5 minutes."
+      size="sm"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit as never} loading={busy}>Unlock</Button>
+        </>
+      }
+    >
+      <form onSubmit={submit}>
+        <Field label="Your password" required>
+          <Input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <button type="submit" className="hidden" />
+      </form>
+    </Dialog>
   )
 }

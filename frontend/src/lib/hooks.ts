@@ -82,3 +82,19 @@ export const fmtTime = (hhmm: string | undefined | null) => {
 }
 
 export const todayISO = () => new Date().toISOString().slice(0, 10)
+
+/** Per-clinic settings values (saved from the Settings page). */
+export function useSettings() {
+  return useQuery<Record<string, any>>({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/api/settings'),
+    staleTime: 60_000,
+  })
+}
+
+/** Mask a mobile number for lists when the clinic's 'Mask patient identifiers' setting is on. */
+export function maskMobile(mobile: string | undefined | null, mask: boolean): string {
+  const m = String(mobile ?? '')
+  if (!mask || m.length < 6) return m
+  return m.slice(0, 2) + '•'.repeat(Math.max(0, m.length - 4)) + m.slice(-2)
+}

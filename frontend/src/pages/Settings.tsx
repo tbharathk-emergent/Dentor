@@ -12,11 +12,26 @@ import { PageHeader, Skeleton } from '@/components/ui/bits'
 
 type Values = Record<string, unknown>
 
-function Toggle({ checked, onChange, label, description }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string }) {
+/** Toggles whose integrations (messaging, backups, 2FA…) are planned for Phase 2.
+ *  They are stored, but nothing in the product consumes them yet — say so honestly. */
+const PHASE2_KEYS = new Set([
+  'rxDigitalSign', 'chartLock', 'onlineBooking', 'smartQueue', 'apptReminder24', 'apptReminder2',
+  'notifyWhatsApp', 'notifySms', 'notifyEmail', 'lowStockAlert', 'labDelayAlert', 'paymentAlert',
+  'twoFactor', 'consentAudit', 'encryptBackup',
+])
+
+function Toggle({ checked, onChange, label, description, phase2 }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string; phase2?: boolean }) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4 py-2.5">
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-slate-800">{label}</span>
+        <span className="block text-sm font-medium text-slate-800">
+          {label}
+          {phase2 && (
+            <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Phase 2
+            </span>
+          )}
+        </span>
         {description && <span className="block text-xs text-slate-500">{description}</span>}
       </span>
       <button
@@ -228,6 +243,7 @@ export default function Settings() {
                   onChange={(v) => set(key)(v)}
                   label={label}
                   description={desc}
+                  phase2={PHASE2_KEYS.has(key)}
                 />
               ))}
             </CardBody>

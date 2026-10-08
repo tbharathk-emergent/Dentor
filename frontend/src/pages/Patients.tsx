@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, LayoutGrid, List, UserPlus, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { maskMobile, todayISO, useCreate, useList, useSettings, useUpdate, type Doc } from '@/lib/hooks'
 import { Badge, StatusBadge, statusTone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -178,6 +178,8 @@ export default function Patients() {
   }, [params, setParams])
 
   const { data, isLoading } = useList('patients', { q, ...(risk ? { risk } : {}), sort: 'created_at', order: 'desc' })
+  const { data: settings } = useSettings()
+  const mask = Boolean(settings?.maskPatient)
   const patients = data?.items ?? []
 
   const stats = useMemo(() => {
@@ -290,7 +292,7 @@ export default function Patients() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-slate-800">{p.name}</div>
                   <div className="truncate text-xs text-slate-500">
-                    {p.code} · {p.age}/{String(p.gender || '').charAt(0)} · {p.mobile}
+                    {p.code} · {p.age}/{String(p.gender || '').charAt(0)} · {maskMobile(p.mobile, mask)}
                   </div>
                 </div>
                 <div className="hidden min-w-0 flex-1 sm:block">

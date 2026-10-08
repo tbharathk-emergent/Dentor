@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..auth import get_current_user
+from ..rules import clinic_settings
 from ..tenancy import TenantDB, get_tenant
 from ..util import now_iso, serialize, text_filter
 
@@ -91,7 +92,9 @@ async def dashboard_stats(date: str, user: dict = Depends(get_current_user), tdb
     first = date[:7] + "-01"
     new_this_month = await tdb.patients.count_documents({"created_at": {"$gte": first}})
 
+    settings = await clinic_settings(tdb)
     return {
+        "financialLock": bool(settings.get("financialLock", False)),
         "patients": total_patients,
         "newPatientsThisMonth": new_this_month,
         "consultants": total_consultants,

@@ -12,7 +12,7 @@ import {
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useDelete, useItem, type Doc } from '@/lib/hooks'
+import { useDelete, useItem, type Doc, useSettings } from '@/lib/hooks'
 import { Badge } from '@/components/ui/Badge'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -50,6 +50,7 @@ export default function PatientProfile() {
 
   const { data: patient, isLoading, isError } = useItem<Doc>('patients', id)
   const remove = useDelete('patients', { successMessage: 'Patient deleted' })
+  const { data: settings } = useSettings()
 
   if (isLoading) {
     return (
@@ -88,6 +89,7 @@ export default function PatientProfile() {
   }
 
   const hasAllergy =
+    Boolean(settings?.allergyAlert ?? true) &&
     patient.allergy && !['none', 'none recorded', 'not recorded'].includes(String(patient.allergy).toLowerCase())
 
   const copyId = () => {
