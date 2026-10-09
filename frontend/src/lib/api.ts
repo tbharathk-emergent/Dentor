@@ -1,3 +1,12 @@
+/**
+ * Single source of truth for the API origin.
+ * - Development: empty → requests stay relative ("/api/…") and the Vite dev server
+ *   proxies them to the local backend (see vite.config.ts).
+ * - Production: set VITE_API_BASE_URL at build time (frontend/.env.production) when the
+ *   API lives on another origin, e.g. https://dentorapi.localappstore.in
+ */
+export const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+
 const TOKEN_KEY = 'dentor.token'
 const USER_KEY = 'dentor.user'
 const CLINIC_KEY = 'dentor.clinic'
@@ -59,7 +68,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (clinic) headers['X-Clinic-Id'] = clinic.id
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(path, {
+  const res = await fetch(API_BASE_URL + path, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
