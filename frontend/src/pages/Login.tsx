@@ -157,6 +157,8 @@ export default function Login() {
               </Button>
             </form>
 
+            {/* Demo credentials exist only in development (SEED_DEMO) — never advertise them in production builds. */}
+            {import.meta.env.DEV && (
             <div className="mt-6 grid gap-2 text-xs leading-relaxed text-slate-600 sm:grid-cols-2">
               <div className="rounded-lg border border-brand-100 bg-brand-50/60 px-3.5 py-3">
                 <b className="text-brand-800">Clinic admin</b>
@@ -173,6 +175,7 @@ export default function Login() {
                 SuperAdmin@2026
               </div>
             </div>
+            )}
             <p className="mt-4 text-center text-[11px] text-slate-400">
               256-bit encrypted session · Authorized clinic personnel only
             </p>
