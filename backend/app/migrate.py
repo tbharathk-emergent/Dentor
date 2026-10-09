@@ -11,7 +11,8 @@ from pymongo.errors import DuplicateKeyError
 
 from .auth import SUPER_ADMIN_ROLE, hash_password, verify_password
 from .config import IS_PROD, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, _DEV_SUPER_ADMIN_PASSWORD, super_admin_bootstrap_password
-from .util import now_iso
+from .tenancy import TenantDB
+from .util import next_sequence, now_iso
 
 log = logging.getLogger("dentor")
 
@@ -81,8 +82,8 @@ async def _ensure_super_admin(db) -> None:
         else:
             raise RuntimeError(
                 "The platform super admin still uses the default development password. "
-                "Set SUPER_ADMIN_PASSWORD in the environment (it will be rotated automatically) "
-                "before starting in production."
+                "Set SUPER_ADMIN_PASSWORD in the environment to a strong value DIFFERENT from "
+                "the development default — it will then be rotated automatically at startup."
             )
 
 
@@ -90,8 +91,11 @@ async def _create_demo_clinic(db) -> str:
     legacy = await db.app_settings.find_one({"_id": "settings"})
     values = (legacy or {}).get("values", {})
     now = now_iso()
+    # Take the next code from the same per-platform sequence the console uses,
+    # so the demo clinic can never collide with an existing production clinic.
+    code = await next_sequence(TenantDB(db, "platform"), "clinics", "CL-", 1, width=3)
     result = await db.clinics.insert_one({
-        "code": "CL-001",
+        "code": code,
         "name": values.get("clinicName", "DENTOR Dental Clinic"),
         "city": "Manaparai",
         "phone": values.get("phone", "+91 73392 99339"),
@@ -100,6 +104,4 @@ async def _create_demo_clinic(db) -> str:
         "plan": "Standard", "status": "Active", "is_demo": True,
         "created_at": now, "updated_at": now, "created_by": "seed",
     })
-    if not await db.counters.find_one({"clinic_id": "platform", "name": "clinics"}):
-        await db.counters.insert_one({"clinic_id": "platform", "name": "clinics", "seq": 1, "start": 1})
     return str(result.inserted_id)

@@ -63,6 +63,13 @@ def super_admin_bootstrap_password() -> str:
     Production requires SUPER_ADMIN_PASSWORD; development falls back to the known
     demo password so local setup stays zero-config.
     """
+    if IS_PROD and SUPER_ADMIN_PASSWORD == _DEV_SUPER_ADMIN_PASSWORD:
+        # Creating the account with the dev default would make every later restart fail
+        # the default-password guard — refuse up front with the real reason.
+        raise RuntimeError(
+            "SUPER_ADMIN_PASSWORD is set to the development default. Production requires "
+            f"a different value — choose a strong password that is not {_DEV_SUPER_ADMIN_PASSWORD!r}."
+        )
     if SUPER_ADMIN_PASSWORD:
         return SUPER_ADMIN_PASSWORD
     if IS_PROD:
