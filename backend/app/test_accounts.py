@@ -7,16 +7,36 @@ authentication. An entry is skipped when its email or mobile belongs to a real p
 setting are disabled, and their sessions ended, once their entry is removed.
 """
 import logging
+import secrets
+
+from pymongo.errors import DuplicateKeyError
 
 from . import config as _config
 from .auth import hash_password, verify_password
-from .otp import _test_number_is_taken, masked_mobile
+from .otp import _test_number_is_taken, is_test_mobile, masked_mobile
 from .sessions import revoke_all_sessions
 from .util import now_iso
 
 log = logging.getLogger("dentor")
 
 SOURCE = "PATIENT_TEST_ACCOUNTS"
+CODE_SOURCE = "OTP_TEST_MOBILES"   # made at the first code login on a test number
+
+
+async def create_code_test_account(db, mobile: str) -> dict:
+    """The account behind the first code login on a listed test number (otp.is_test_mobile): a test account with an
+    unusable random password (code login only, until a password is set by reset), never seeing real records."""
+    stamp = now_iso()
+    try:
+        await db.patient_accounts.insert_one({
+            "mobile": mobile, "name": "Test Patient", "password_hash": hash_password(secrets.token_urlsafe(32)),
+            "gender": "", "age": None, "status": "Active", "test_account": True, "test_source": CODE_SOURCE,
+            "created_at": stamp, "updated_at": stamp,
+        })
+        log.warning("Test patient account created at the first code login on %s.", masked_mobile(mobile))
+    except DuplicateKeyError:  # two first logins at once: use the one that won
+        pass
+    return await db.patient_accounts.find_one({"mobile": mobile})
 
 
 def masked_email(email: str) -> str:
@@ -60,8 +80,15 @@ async def sync_patient_test_accounts(db) -> dict:
                     await revoke_all_sessions(db, "patient", str(account["_id"]))
         ready.append(mobile)
 
+    # accounts made by a first code login follow OTP_TEST_MOBILES: off when their number is no longer listed
+    listed = [m for m in _config.OTP_TEST_MOBILES if is_test_mobile(m)]
+    await db.patient_accounts.update_many({"test_source": CODE_SOURCE, "mobile": {"$in": listed}, "status": "Disabled"},
+                                          {"$set": {"status": "Active", "updated_at": now_iso()}})
     disabled = 0
-    async for account in db.patient_accounts.find({"test_source": SOURCE, "mobile": {"$nin": ready}, "status": {"$ne": "Disabled"}}):
+    async for account in db.patient_accounts.find({"$or": [
+        {"test_source": SOURCE, "mobile": {"$nin": ready}},
+        {"test_source": CODE_SOURCE, "mobile": {"$nin": listed}},
+    ], "status": {"$ne": "Disabled"}}):
         await db.patient_accounts.update_one({"_id": account["_id"]}, {"$set": {"status": "Disabled", "updated_at": now_iso()}})
         await revoke_all_sessions(db, "patient", str(account["_id"]))
         disabled += 1

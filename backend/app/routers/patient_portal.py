@@ -27,7 +27,7 @@ from ..notify import (
 )
 from ..roles import CLINIC_ADMIN_ROLES
 from ..email_codes import normalize_email, read_email_ticket, send_email_code, verify_email_code
-from ..otp import is_test_mobile, normalize_mobile, read_ticket, request_otp, same_mobile, verify_otp
+from ..otp import _test_number_is_taken, is_test_mobile, normalize_mobile, read_ticket, request_otp, same_mobile, verify_otp
 from ..patient_auth import (
     PatientCtx,
     app_records_only,
@@ -39,6 +39,7 @@ from ..patient_auth import (
     may_see_record,
     public_account,
 )
+from ..test_accounts import create_code_test_account
 from ..rules import ACTIVE_APPT_STATUSES, clinic_settings, validate_appointment
 from ..scheduling import SLOT_TIMES, clinic_now, clinic_today, day_slots, free_chair, is_future, parse_date
 from ..security import check_login_allowed, clear_login_failures, rate_limit, record_login_failure
@@ -241,6 +242,9 @@ async def device_revoke(body: DeviceRevoke, account: dict = Depends(get_patient_
 async def login_with_otp(body: TicketBody):
     mobile = read_ticket(body.ticket, "login")
     account = await db.patient_accounts.find_one({"mobile": mobile})
+    if not account and is_test_mobile(mobile) and not await _test_number_is_taken(db, mobile):
+        # a listed test number signs in with the fixed code straight away (docs/INTEGRATIONS.md)
+        account = await create_code_test_account(db, mobile)
     if not account:
         raise HTTPException(status_code=404, detail="No account found for this number. Please sign up.")
     if account.get("status") == "Disabled":

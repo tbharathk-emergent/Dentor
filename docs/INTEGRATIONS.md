@@ -118,8 +118,10 @@ Set both or neither: the API refuses to start with only one, or with a badly for
 - Expiry, the 5 wrong-attempt lock, the 30-second resend wait and the 5-per-hour limit all still apply.
 - Refused (a plain "could not send" error) if the number is on any patient record the test account
   did not create itself, or on a patient account that was not created as a test account.
-- A listed number without an account: sign up in the app with the code first. Code login on it says
-  "No account found for this number. Please sign up."
+- A listed number without an account: the first code login creates its test account ("Test Patient",
+  code login only, no usable password) and signs in. Sign-up with the code works too. No account is made
+  for a number that belongs to a real patient. Such an account is disabled at the next restart once its
+  number is no longer listed, and enabled again when it is listed again.
 - An account created with the fixed code is marked `test_account`. It only ever sees records it created
   in the app itself (marked `test_record`; staff cannot set that mark). This holds for password login
   too, and after the settings are removed.
@@ -140,6 +142,11 @@ PATIENT_TEST_ACCOUNTS=tester1@example.com|9000000001|<password>;tester2@example.
 - Changing an entry's password applies at the next restart and ends that account's sessions. Removing an
   entry (or the whole setting) disables its account and ends its sessions; adding it back enables it again.
 - To also use code login on such an account, list its mobile in `OTP_TEST_MOBILES` as well.
+
+**A clinic to join.** After signing in, a test account must choose a clinic. Only clinics with
+**Settings → Appointments & Queue → Patient app booking** switched on are listed, and production never lists
+demo clinics. For testing, create a dedicated test clinic in the Super Admin console and switch that on, so
+test patients never appear in a real clinic; switch it off (or suspend the clinic) when testing ends.
 
 While either is on, the Super Admin console (Connected services) and the upgrade check show an amber notice
 with the masked numbers and the number of test logins.

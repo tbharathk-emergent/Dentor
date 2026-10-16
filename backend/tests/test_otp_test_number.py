@@ -94,14 +94,51 @@ async def test_every_configured_number_gets_the_fixed_code(http, monkeypatch):
     assert (await request(http, "9000000776", "signup")).status_code == 503
 
 
-async def test_code_login_on_a_test_number_without_an_account_says_sign_up(http, monkeypatch):
+async def test_first_code_login_on_a_test_number_makes_its_test_account(http, monkeypatch):
+    from app.db import db
+    from app.test_accounts import CODE_SOURCE, sync_patient_test_accounts
     enable(monkeypatch)
+    monkeypatch.setattr(otp, "SMS_PROVIDER", "")
+    monkeypatch.setattr(otp, "RESEND_COOLDOWN_SECONDS", 0)   # two logins in a row
     assert (await request(http, TEST_MOBILE, "login")).status_code == 200
     ticket = (await verify(http, TEST_MOBILE, "login", CODE)).json()["ticket"]
     res = await http.post("/api/patient/auth/login-otp", json={"ticket": ticket})
-    assert res.status_code == 404 and "sign up" in res.json()["detail"]
-    # a real number without an account still learns nothing: "sent", and no code is stored
+    assert res.status_code == 200, res.text
+    account = await db.patient_accounts.find_one({"mobile": TEST_MOBILE})
+    assert account["test_account"] is True and account["test_source"] == CODE_SOURCE and account["name"] == "Test Patient"
+    # the random password is unusable: code login only
+    assert (await http.post("/api/patient/auth/login", json={"identifier": TEST_MOBILE, "password": CODE})).status_code == 401
+    # the next code login uses the same account
+    assert (await request(http, TEST_MOBILE, "login")).status_code == 200
+    ticket = (await verify(http, TEST_MOBILE, "login", CODE)).json()["ticket"]
+    assert (await http.post("/api/patient/auth/login-otp", json={"ticket": ticket})).json()["account"]["id"] == str(account["_id"])
+    assert await db.patient_accounts.count_documents({"mobile": TEST_MOBILE}) == 1
+
+    # the number taken off the list: the account is disabled at the next start; listed again: enabled
+    session = res.json()
+    monkeypatch.setattr(config, "OTP_TEST_MOBILES", [OTHER_MOBILE])
+    assert (await sync_patient_test_accounts(db))["disabled"] == 1
+    assert (await http.get("/api/patient/profiles", headers=bearer(session["access_token"]))).status_code == 401
+    enable(monkeypatch)
+    await sync_patient_test_accounts(db)
+    assert (await db.patient_accounts.find_one({"mobile": TEST_MOBILE}))["status"] == "Active"
+
+
+async def test_no_test_account_is_made_for_a_number_that_belongs_to_a_real_patient(http, monkeypatch):
     from app.db import db
+    enable(monkeypatch)
+    assert (await request(http, TEST_MOBILE, "login")).status_code == 200
+    ticket = (await verify(http, TEST_MOBILE, "login", CODE)).json()["ticket"]
+    # between the code and the login, the front desk registers a real person on the number
+    await http.post("/api/patients", headers=await staff_headers(http, ADMIN),
+                    json={"name": "Real Person", "mobile": TEST_MOBILE, "age": 50, "gender": "Male"})
+    res = await http.post("/api/patient/auth/login-otp", json={"ticket": ticket})
+    assert res.status_code == 404 and await db.patient_accounts.find_one({"mobile": TEST_MOBILE}) is None
+
+
+async def test_a_real_number_without_an_account_still_learns_nothing(http, monkeypatch):
+    from app.db import db
+    enable(monkeypatch)
     assert (await request(http, OTHER_MOBILE, "login")).json()["sent"] is True
     assert await db.otp_codes.count_documents({"mobile": OTHER_MOBILE}) == 0
 

@@ -33,3 +33,6 @@ docs/design/*.fig
 docs/design/*.pdf
 docs/design/**/*.fig
 docs/design/**/*.pdf
+
+# Signing keys never go in git
+*.jks
