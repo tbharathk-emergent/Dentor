@@ -1,0 +1,70 @@
+// Release signing shared by the three Android apps (Clinic/owner, Consultant, patient).
+// Applied from mobile/apps/<app>/android/app/build.gradle; contains no secrets.
+//
+// Where the upload key comes from, first match wins:
+//   1. Gradle properties: ~/.gradle/gradle.properties, -P options or ORG_GRADLE_PROJECT_* variables
+//      (DENTOR_UPLOAD_STORE_FILE, DENTOR_UPLOAD_STORE_PASSWORD, DENTOR_UPLOAD_KEY_ALIAS, DENTOR_UPLOAD_KEY_PASSWORD);
+//   2. a properties file with the same four names: the file named by the DENTOR_SIGNING_PROPERTIES
+//      environment variable, otherwise mobile/signing/signing.properties (git-ignored);
+//   3. nothing: release builds are signed with the public debug key, as before.
+// A relative keystore path is read from the folder of the properties file (from android/app/ for Gradle
+// properties, as before); a leading "~" means the home folder. Problems are reported by name only, never
+// with a value, and only when a release task runs, so debug builds are never affected.
+
+def names = ['DENTOR_UPLOAD_STORE_FILE', 'DENTOR_UPLOAD_STORE_PASSWORD', 'DENTOR_UPLOAD_KEY_ALIAS', 'DENTOR_UPLOAD_KEY_PASSWORD']
+def signingDir = new File(projectDir, '../../../../signing').canonicalFile
+def home = { String path -> path?.startsWith('~/') ? System.getProperty('user.home') + path.substring(1) : path }
+
+def values = null
+def source = null
+def baseDir = null
+def problem = null
+
+if (project.hasProperty('DENTOR_UPLOAD_STORE_FILE')) {
+    values = names.collectEntries { [(it): project.findProperty(it)?.toString()?.trim()] }
+    source = 'Gradle properties'
+    baseDir = projectDir
+} else {
+    def named = System.getenv('DENTOR_SIGNING_PROPERTIES')
+    def file = named ? new File(home(named.trim())) : new File(signingDir, 'signing.properties')
+    if (named && !file.isFile()) {
+        problem = "release signing: DENTOR_SIGNING_PROPERTIES points to a file that does not exist: ${file}"
+    } else if (file.isFile()) {
+        def properties = new Properties()
+        file.withInputStream { properties.load(it) }
+        values = names.collectEntries { [(it): properties.getProperty(it)?.trim()] }
+        source = file.path
+        baseDir = file.parentFile
+    }
+}
+
+def signing = null
+if (values != null && !problem) {
+    def missing = names.findAll { !values[it] }
+    if (missing) {
+        problem = "release signing (${source}) is missing ${missing.join(', ')}"
+    } else {
+        def storePath = home(values.DENTOR_UPLOAD_STORE_FILE)
+        def storeFile = new File(storePath).isAbsolute() ? new File(storePath) : new File(baseDir, storePath)
+        if (!storeFile.isFile()) {
+            problem = "release signing (${source}): the keystore was not found at ${storeFile.canonicalPath}"
+        } else {
+            signing = [storeFile: storeFile.canonicalFile, storePassword: values.DENTOR_UPLOAD_STORE_PASSWORD,
+                       keyAlias: values.DENTOR_UPLOAD_KEY_ALIAS, keyPassword: values.DENTOR_UPLOAD_KEY_PASSWORD]
+        }
+    }
+}
+
+// Read by build.gradle: the upload key's settings, or null for the debug key.
+project.ext.dentorUploadSigning = signing
+
+// A half-configured upload key must not silently fall back to the debug key: stop any release task.
+if (problem) {
+    def message = "Dentor ${problem}. See mobile/signing/README.md."
+    gradle.taskGraph.whenReady { graph ->
+        if (graph.allTasks.any { it.project == project && it.name.contains('Release') }) {
+            throw new GradleException(message)
+        }
+    }
+    logger.warn("Warning: ${message} Release tasks will stop; debug builds are not affected.")
+}

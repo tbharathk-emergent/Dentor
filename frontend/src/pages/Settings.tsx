@@ -1,28 +1,35 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, KeyRound, Megaphone, Save } from 'lucide-react'
+import { Download, KeyRound, Lock, Megaphone, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/cn'
+import { loadState } from '@/lib/hooks'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
-import { PageHeader, Skeleton } from '@/components/ui/bits'
+import { Loaded, PageHeader, Skeleton } from '@/components/ui/bits'
 
 type Values = Record<string, unknown>
+
+/** A switch that is off and a field that is empty are stored either way or not at all: all of them are "not set". */
+const unset = (v: unknown) => v === undefined || v === null || v === '' || v === false
+const same = (a: unknown, b: unknown) => (unset(a) && unset(b)) || JSON.stringify(a) === JSON.stringify(b)
 
 /** Toggles whose integrations (messaging, backups, 2FA…) are planned for Phase 2.
  *  They are stored, but nothing in the product consumes them yet — say so honestly. */
 const PHASE2_KEYS = new Set([
-  'rxDigitalSign', 'chartLock', 'onlineBooking', 'smartQueue', 'apptReminder24', 'apptReminder2',
+  'rxDigitalSign', 'chartLock', 'smartQueue', 'apptReminder24', 'apptReminder2',
   'notifyWhatsApp', 'notifySms', 'notifyEmail', 'lowStockAlert', 'labDelayAlert', 'paymentAlert',
   'twoFactor', 'consentAudit', 'encryptBackup',
 ])
 
-function Toggle({ checked, onChange, label, description, phase2 }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string; phase2?: boolean }) {
+function Toggle({ checked, onChange, label, description, phase2, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string; phase2?: boolean; disabled?: boolean }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 py-2.5">
+    <label className={cn('flex items-center justify-between gap-4 py-2.5', !disabled && 'cursor-pointer')}>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-slate-800">
           {label}
@@ -38,9 +45,10 @@ function Toggle({ checked, onChange, label, description, phase2 }: { checked: bo
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-6 w-10 shrink-0 rounded-full transition-colors',
+          'relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60',
           checked ? 'bg-brand-600' : 'bg-slate-300',
         )}
       >
@@ -63,7 +71,7 @@ const TOGGLES: { section: string; items: [string, string, string][] }[] = [
   {
     section: 'Appointments & Queue',
     items: [
-      ['onlineBooking', 'Online booking', 'Allow patients to book from the patient portal'],
+      ['onlineBooking', 'Patient app booking', 'Patients can register with this clinic and book, move or cancel visits in the Dentor patient app'],
       ['doubleBooking', 'Allow double booking', 'Permit two appointments in the same chair & slot'],
       ['smartQueue', 'Smart queue', 'Token-based live patient queue on the dashboard'],
       ['apptReminder24', '24-hour reminder', 'Remind patients a day before their appointment'],
@@ -105,48 +113,83 @@ const TOGGLES: { section: string; items: [string, string, string][] }[] = [
 export default function Settings() {
   const [params] = useSearchParams()
   const qc = useQueryClient()
-  const [values, setValues] = useState<Values>({})
-  const [dirty, setDirty] = useState(false)
+  const { isClinicAdmin } = useAuth()
+  // Only the clinic owner and administrators may change the settings or the banner; the API refuses
+  // everyone else (403). Everybody else gets the same page to read, with nothing on it to change or
+  // save. A role taken away while this page was open is only learnt from a refused save: the API's
+  // message is kept here and the page is read-only from then on.
+  const [refused, setRefused] = useState<string | null>(null)
+  const canEdit = isClinicAdmin && refused === null
+  // Only what was changed on this page since the settings were loaded. The page shows the saved
+  // settings with these on top, and a save sends these and nothing else, so a setting somebody
+  // else changed in the meantime is never written back with the value this page happened to hold.
+  const [edits, setEdits] = useState<Values>({})
   const [saving, setSaving] = useState(false)
   const adRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useQuery<Values>({ queryKey: ['settings'], queryFn: () => api.get('/api/settings') })
-  const { data: ad } = useQuery<Values>({ queryKey: ['advertisement'], queryFn: () => api.get('/api/advertisement') })
+  const settingsQuery = useQuery<Values>({ queryKey: ['settings'], queryFn: () => api.get('/api/settings') })
+  const data = settingsQuery.data
+  const adQuery = useQuery<Values>({ queryKey: ['advertisement'], queryFn: () => api.get('/api/advertisement') })
+  const ad = adQuery.data
   const [adForm, setAdForm] = useState<Values>({})
 
-  useEffect(() => { if (data) { setValues(data); setDirty(false) } }, [data])
   useEffect(() => { if (ad) setAdForm(ad) }, [ad])
   useEffect(() => {
     if (params.get('section') === 'advertisement') setTimeout(() => adRef.current?.scrollIntoView({ behavior: 'smooth' }), 200)
   }, [params])
 
-  const set = (k: string) => (v: unknown) => { setValues((s) => ({ ...s, [k]: v })); setDirty(true) }
+  const values = useMemo<Values>(() => ({ ...data, ...edits }), [data, edits])
+  // A switch flipped and flipped back, or a text typed and removed again, is not a change.
+  const changes = useMemo<Values>(
+    () => Object.fromEntries(Object.entries(edits).filter(([name, value]) => !same(value, data?.[name]))),
+    [data, edits],
+  )
+  const dirty = Object.keys(changes).length > 0
+
+  const set = (k: string) => (v: unknown) => setEdits((e) => ({ ...e, [k]: v }))
   const text = (k: string) => ({
     value: String(values[k] ?? ''),
     onChange: (e: { target: { value: string } }) => set(k)(e.target.value),
+    disabled: !canEdit,
   })
 
+  /** A save that failed. Refused for lack of permission: what was typed is dropped, so the page shows what is saved. */
+  const saveFailed = (e: unknown) => {
+    const message = e instanceof Error ? e.message : 'Failed to save'
+    toast.error(message)
+    if (e instanceof ApiError && e.status === 403) {
+      setRefused(message)
+      setEdits({})
+      if (ad) setAdForm(ad)
+    }
+  }
+
   const save = async () => {
+    if (!canEdit || !dirty) return // not theirs to change, or nothing changed: nothing is sent
+    const sent = changes
     setSaving(true)
     try {
-      await api.put('/api/settings', { values })
+      const saved = await api.patch<{ values: Values }>('/api/settings', { values: sent })
+      // The answer is every setting as it now stands, including what others changed meanwhile.
+      qc.setQueryData(['settings'], saved.values)
+      // What was typed while the request was on its way stays an unsaved edit.
+      setEdits((e) => Object.fromEntries(Object.entries(e).filter(([name, value]) => !(name in sent) || !same(value, sent[name]))))
       toast.success('Settings saved')
-      setDirty(false)
-      qc.invalidateQueries({ queryKey: ['settings'] })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save')
+      saveFailed(e)
     } finally {
       setSaving(false)
     }
   }
 
   const saveAd = async () => {
+    if (!canEdit) return
     try {
       await api.put('/api/advertisement', { values: adForm })
       toast.success('Advertisement updated')
       qc.invalidateQueries({ queryKey: ['advertisement'] })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save')
+      saveFailed(e)
     }
   }
 
@@ -160,31 +203,48 @@ export default function Settings() {
 
   const sections = useMemo(() => TOGGLES, [])
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-64" />
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48" />)}
-      </div>
-    )
-  }
-
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Settings"
         subtitle="Clinic identity, preferences and security"
         actions={
-          <>
-            <Button variant="outline" onClick={exportJson}><Download className="h-4 w-4" /> Export</Button>
-            <Button onClick={save} loading={saving} disabled={!dirty}>
-              <Save className="h-4 w-4" /> {dirty ? 'Save Changes' : 'Saved'}
-            </Button>
-          </>
+          data && (
+            <>
+              <Button variant="outline" onClick={exportJson}><Download className="h-4 w-4" /> Export</Button>
+              {canEdit && (
+                <Button onClick={save} loading={saving} disabled={!dirty}>
+                  <Save className="h-4 w-4" /> {dirty ? 'Save Changes' : 'Saved'}
+                </Button>
+              )}
+            </>
+          )
         }
       />
 
+      {/* Settings that could not be loaded are not shown as blank fields and switched-off switches. */}
+      <Loaded
+        load={loadState(settingsQuery)}
+        what="the settings"
+        card
+        skeleton={
+          <div className="space-y-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48" />)}
+          </div>
+        }
+      >
       <div className="space-y-5">
+        {!canEdit && (
+          <div role="note" className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-3 text-[13px] text-slate-700">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <p className="min-w-0">
+              {refused === null
+                ? 'You can view these settings, but only the clinic owner or an administrator can change them.'
+                : `Your changes were not saved. ${refused}`}
+            </p>
+          </div>
+        )}
+
         <Card>
           <CardHeader title="Clinic Identity" subtitle="Appears on invoices, prescriptions and certificates" />
           <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -244,6 +304,7 @@ export default function Settings() {
                   label={label}
                   description={desc}
                   phase2={PHASE2_KEYS.has(key)}
+                  disabled={!canEdit}
                 />
               ))}
             </CardBody>
@@ -255,37 +316,41 @@ export default function Settings() {
             <CardHeader
               title={<span className="flex items-center gap-2"><Megaphone className="h-4 w-4 text-brand-700" /> Dashboard Advertisement</span>}
               subtitle="The banner shown to every dashboard user"
-              actions={<Button size="sm" onClick={saveAd}>Save Banner</Button>}
+              actions={ad && (canEdit ? <Button size="sm" onClick={saveAd}>Save Banner</Button> : <Badge>View only</Badge>)}
             />
+            {/* The banner is saved as a whole: a blank form for one that failed to load would wipe it. */}
+            <Loaded load={loadState(adQuery)} what="the banner" skeleton={<CardBody><Skeleton className="h-32" /></CardBody>}>
             <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Title" className="sm:col-span-2">
-                <Input value={String(adForm.title ?? '')} onChange={(e) => setAdForm((f) => ({ ...f, title: e.target.value }))} />
+                <Input value={String(adForm.title ?? '')} disabled={!canEdit} onChange={(e) => setAdForm((f) => ({ ...f, title: e.target.value }))} />
               </Field>
               <Field label="Subtitle" className="sm:col-span-2">
-                <Input value={String(adForm.subtitle ?? '')} onChange={(e) => setAdForm((f) => ({ ...f, subtitle: e.target.value }))} />
+                <Input value={String(adForm.subtitle ?? '')} disabled={!canEdit} onChange={(e) => setAdForm((f) => ({ ...f, subtitle: e.target.value }))} />
               </Field>
               <Field label="Button Label">
-                <Input value={String(adForm.button ?? '')} onChange={(e) => setAdForm((f) => ({ ...f, button: e.target.value }))} />
+                <Input value={String(adForm.button ?? '')} disabled={!canEdit} onChange={(e) => setAdForm((f) => ({ ...f, button: e.target.value }))} />
               </Field>
               <Field label="Status">
-                <Select value={String(adForm.status ?? 'Active')} onChange={(e) => setAdForm((f) => ({ ...f, status: e.target.value }))}>
+                <Select value={String(adForm.status ?? 'Active')} disabled={!canEdit} onChange={(e) => setAdForm((f) => ({ ...f, status: e.target.value }))}>
                   {['Active', 'Inactive'].map((s) => <option key={s}>{s}</option>)}
                 </Select>
               </Field>
             </CardBody>
+            </Loaded>
           </Card>
         </div>
 
         <ChangePassword />
       </div>
 
-      {dirty && (
+      {canEdit && dirty && (
         <div className="sticky bottom-20 z-10 mt-5 flex justify-end lg:bottom-6">
           <Button onClick={save} loading={saving} size="lg" className="shadow-pop">
             <Save className="h-4 w-4" /> Save Changes
           </Button>
         </div>
       )}
+      </Loaded>
     </div>
   )
 }

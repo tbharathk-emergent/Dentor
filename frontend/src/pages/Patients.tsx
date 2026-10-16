@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, Figures, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { fmtDate } from '@/lib/hooks'
 
 const DOCTORS = ['Dr. Kumar', 'Dr. Anitha', 'Dr. Gowtham']
@@ -177,7 +177,7 @@ export default function Patients() {
     }
   }, [params, setParams])
 
-  const { data, isLoading } = useList('patients', { q, ...(risk ? { risk } : {}), sort: 'created_at', order: 'desc' })
+  const { data, load } = useList('patients', { q, ...(risk ? { risk } : {}), sort: 'created_at', order: 'desc' })
   const { data: settings } = useSettings()
   const mask = Boolean(settings?.maskPatient)
   const patients = data?.items ?? []
@@ -202,14 +202,15 @@ export default function Patients() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
+      <Figures load={load} className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
         <StatCard label="Total patients" value={stats.total} icon={<Users className="h-5 w-5" />} />
         <StatCard label="New this month" value={stats.newThisMonth} icon={<UserPlus className="h-5 w-5" />} accent="green" />
         <StatCard label="High risk" value={stats.high} icon={<CalendarDays className="h-5 w-5" />} accent="red" />
-      </div>
+      </Figures>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchInput value={q} onChange={setQ} placeholder="Search name, ID, mobile or treatment…" className="min-w-0 flex-1 sm:max-w-sm" />
+        {/* min-w-40: on a phone the filters wrap below instead of squeezing the search box */}
+        <SearchInput value={q} onChange={setQ} placeholder="Search name, ID, mobile or treatment…" className="min-w-40 flex-1 sm:max-w-sm" />
         <Select value={risk} onChange={(e) => setRisk(e.target.value)} className="w-32">
           <option value="">All Risk</option>
           {['Low', 'Medium', 'High'].map((r) => <option key={r}>{r}</option>)}
@@ -225,9 +226,8 @@ export default function Patients() {
         />
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={6} />
-      ) : !patients.length ? (
+      <Loaded load={load} what="the patients" card skeleton={<ListSkeleton rows={6} />}>
+      {!patients.length ? (
         <Card>
           <EmptyState
             icon={<Users className="h-6 w-6" />}
@@ -306,6 +306,7 @@ export default function Patients() {
           </ul>
         </Card>
       )}
+      </Loaded>
 
       <PatientFormDialog open={formOpen} onClose={() => setFormOpen(false)} />
     </div>

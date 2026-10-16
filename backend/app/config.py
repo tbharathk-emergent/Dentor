@@ -47,14 +47,59 @@ SEED_DEMO = (_seed_env or ("1" if not IS_PROD else "0")).strip().lower() in ("1"
 
 # Comma-separated list of allowed browser origins. Only needed when the frontend is NOT
 # served same-origin behind the API's reverse proxy.
-CORS_ORIGINS = [
-    o.strip()
-    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
-    if o.strip()
-]
+# The development default also covers the browser previews of the three mobile apps
+# (ports 8091-8093). Phones need no entry: native apps do not send a browser origin.
+_DEV_CORS = ",".join(
+    f"http://{host}:{port}"
+    for host in ("localhost", "127.0.0.1")
+    for port in (5173, 8091, 8092, 8093)
+)
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _DEV_CORS).split(",") if o.strip()]
 
 # Largest accepted request body (base64 patient-file uploads are ≤5 MB ≈ 7 MB of JSON).
 MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(16 * 1024 * 1024)))
+
+
+# ---- Mobile apps: sessions, OTP and notifications ----
+# Short-lived access tokens for the patient app; long-lived, rotating refresh tokens for all apps.
+PATIENT_ACCESS_MINUTES = int(os.getenv("PATIENT_ACCESS_MINUTES", "60"))
+REFRESH_TOKEN_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "30"))
+
+# OTP delivery. "console" logs the code and returns it to the caller (development only);
+# "webhook" POSTs {to, message, purpose} to SMS_WEBHOOK_URL (your SMS gateway adapter);
+# empty = not configured, OTP requests are refused. Production never allows "console".
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "" if IS_PROD else "console").strip().lower()
+if IS_PROD and SMS_PROVIDER == "console":
+    SMS_PROVIDER = ""
+SMS_WEBHOOK_URL = os.getenv("SMS_WEBHOOK_URL", "").strip()
+SMS_WEBHOOK_TOKEN = os.getenv("SMS_WEBHOOK_TOKEN", "").strip()
+# Email codes (staff and patient password reset by email, staff sign-up). "console" logs the code
+# and returns it to the client in development; "webhook" POSTs {to, subject, text, purpose} to
+# EMAIL_WEBHOOK_URL (your email service adapter). Production never falls back to console.
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "" if IS_PROD else "console").strip().lower()
+if IS_PROD and EMAIL_PROVIDER == "console":
+    EMAIL_PROVIDER = ""
+EMAIL_WEBHOOK_URL = os.getenv("EMAIL_WEBHOOK_URL", "").strip()
+EMAIL_WEBHOOK_TOKEN = os.getenv("EMAIL_WEBHOOK_TOKEN", "").strip()
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "300"))
+OTP_MAX_PER_HOUR = int(os.getenv("OTP_MAX_PER_HOUR", "5"))
+
+# Push delivery. "webhook" POSTs {devices: [{token, platform}], title, body, data} to
+# PUSH_WEBHOOK_URL (your FCM / APNs adapter); empty keeps notifications in-app only.
+PUSH_PROVIDER = os.getenv("PUSH_PROVIDER", "").strip().lower()
+PUSH_WEBHOOK_URL = os.getenv("PUSH_WEBHOOK_URL", "").strip()
+PUSH_WEBHOOK_TOKEN = os.getenv("PUSH_WEBHOOK_TOKEN", "").strip()
+
+# In-app notifications are deleted this many days after they were created. 0 keeps them for ever.
+NOTIFICATION_RETENTION_DAYS = max(0, int(os.getenv("NOTIFICATION_RETENTION_DAYS", "180")))
+
+# Demo logins created by demo seeding only (never by a normal production start).
+OWNER_EMAIL = "owner@dentor.in"
+OWNER_DEFAULT_PASSWORD = "Owner@2026"
+CONSULTANT_EMAIL = "kumar@dentor.in"
+CONSULTANT_DEFAULT_PASSWORD = "Consultant@2026"
+DEMO_PATIENT_MOBILE = "9876543210"
+DEMO_PATIENT_PASSWORD = "Patient@2026"
 
 
 def super_admin_bootstrap_password() -> str:

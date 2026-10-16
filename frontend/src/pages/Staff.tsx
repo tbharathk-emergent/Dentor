@@ -1,25 +1,31 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { IdCard, Plus, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtDate, fmtINR, useCreate, useDelete, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, todayISO, useCreate, useDelete, useList, useUpdate, type Doc } from '@/lib/hooks'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, Figures, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Tabs } from '@/components/ui/Tabs'
+import { LoginsPanel } from '@/components/staff/LoginsPanel'
+import { useAuth } from '@/lib/auth'
 
 const DEPARTMENTS = ['Clinical', 'Front Desk', 'Pharmacy', 'Laboratory', 'Accounts', 'Administration', 'Housekeeping']
 const EMPLOYMENT = ['Full Time', 'Part Time', 'Consultant', 'Contract']
 
 export default function Staff() {
+  // Sign-ins are managed by the clinic owner and administrators (the API enforces this; the tab is hidden for everyone else).
+  const { isClinicAdmin: canManageLogins } = useAuth()
+  const [tab, setTab] = useState('directory')
   const [q, setQ] = useState('')
   const [department, setDepartment] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Doc | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('staff', { q, ...(department ? { department } : {}), sort: 'code', order: 'asc' })
+  const { data, load } = useList('staff', { q, ...(department ? { department } : {}), sort: 'code', order: 'asc' })
   const rows = data?.items ?? []
   const remove = useDelete('staff', { successMessage: 'Staff member removed' })
 
@@ -30,19 +36,34 @@ export default function Staff() {
     <div>
       <PageHeader
         title="Staff"
-        subtitle="Team directory, roles and employment details"
+        subtitle="Team directory, roles and who can sign in"
         actions={
-          <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
-            <Plus className="h-4 w-4" /> Add Staff
-          </Button>
+          tab === 'directory' ? (
+            <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
+              <Plus className="h-4 w-4" /> Add Staff
+            </Button>
+          ) : undefined
         }
       />
 
-      <div className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
+      {canManageLogins && (
+        <Tabs
+          className="mb-4"
+          value={tab}
+          onChange={setTab}
+          tabs={[{ key: 'directory', label: 'Team directory' }, { key: 'logins', label: 'Logins & app access' }]}
+        />
+      )}
+      {tab === 'logins' && canManageLogins ? (
+        <LoginsPanel />
+      ) : (
+      <>
+
+      <Figures load={load} className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
         <StatCard label="Team members" value={data?.total ?? 0} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Active" value={active} icon={<IdCard className="h-5 w-5" />} accent="green" />
         <StatCard label="Clinical team" value={clinical} icon={<IdCard className="h-5 w-5" />} accent="blue" />
-      </div>
+      </Figures>
 
       <div className="mb-3 flex flex-wrap gap-2">
         <SearchInput value={q} onChange={setQ} placeholder="Search name, role or mobile…" className="min-w-0 flex-1 sm:max-w-sm" />
@@ -53,16 +74,16 @@ export default function Staff() {
       </div>
 
       <Card>
-        {isLoading ? (
-          <ListSkeleton rows={5} />
-        ) : !rows.length ? (
+        <Loaded load={load} what="the team directory">
+        {!rows.length ? (
           <EmptyState icon={<Users className="h-6 w-6" />} title="No staff found" message="Add your first team member." />
         ) : (
           <ul className="divide-y divide-slate-100">
             {rows.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
                 <Avatar name={s.name} />
-                <div className="min-w-0 flex-1">
+                {/* basis-40: on a phone the badges and actions wrap below instead of squeezing the name out */}
+                <div className="min-w-0 flex-1 basis-40">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold text-slate-800">{s.name}</span>
                     <span className="text-xs text-slate-400">{s.code}</span>
@@ -85,7 +106,11 @@ export default function Staff() {
             ))}
           </ul>
         )}
+        </Loaded>
       </Card>
+
+      </>
+      )}
 
       <StaffDialog open={formOpen} onClose={() => setFormOpen(false)} editing={editing} />
       <ConfirmDialog
@@ -110,7 +135,7 @@ function StaffDialog({ open, onClose, editing }: { open: boolean; onClose: () =>
       setForm(
         editing
           ? { name: editing.name, role: editing.role, department: editing.department, mobile: editing.mobile || '', email: editing.email || '', employment: editing.employment || 'Full Time', salary: String(editing.salary ?? ''), status: editing.status || 'Active', joined: editing.joined || '' }
-          : { name: '', role: '', department: DEPARTMENTS[0], mobile: '', email: '', employment: 'Full Time', salary: '', status: 'Active', joined: new Date().toISOString().slice(0, 10) },
+          : { name: '', role: '', department: DEPARTMENTS[0], mobile: '', email: '', employment: 'Full Time', salary: '', status: 'Active', joined: todayISO() },
       )
     }
   }, [open, editing])

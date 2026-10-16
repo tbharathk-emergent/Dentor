@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { BriefcaseMedical, CalendarDays, CalendarPlus, MapPin, Star, Stethoscope } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtDate, fmtINR, fmtTime, todayISO, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, fmtTime, loadState, todayISO, useList, useUpdate, type Doc } from '@/lib/hooks'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Segmented } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, Figures, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { BookingWizard } from '@/components/consult/BookingWizard'
 
 export default function BookConsultant() {
@@ -18,7 +18,7 @@ export default function BookConsultant() {
   const [historyQ, setHistoryQ] = useState('')
   const [cancelTarget, setCancelTarget] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('consultants', {
+  const { data, load } = useList('consultants', {
     q,
     ...(type !== 'All' ? { type } : {}),
     sort: 'code',
@@ -28,15 +28,16 @@ export default function BookConsultant() {
   const consultants = data?.items ?? []
 
   // Full roster for the wizard's consultant select (independent of the page filter).
-  const { data: allData } = useList('consultants', { sort: 'code', order: 'asc', limit: 100 })
-  const allConsultants = allData?.items ?? []
+  const roster = useList('consultants', { sort: 'code', order: 'asc', limit: 100 })
+  const allConsultants = roster.data?.items ?? []
 
-  const { data: history, isLoading: historyLoading } = useList('consultant_bookings', {
+  const bookingList = useList('consultant_bookings', {
     q: historyQ,
     sort: 'date',
     order: 'desc',
     limit: 200,
   })
+  const history = bookingList.data
   const bookings = history?.items ?? []
 
   const stats = useMemo(() => {
@@ -66,11 +67,11 @@ export default function BookConsultant() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
+      <Figures load={loadState(roster, bookingList)} what="the consultation figures" className="mb-4 grid grid-cols-3 gap-2.5 sm:gap-3">
         <StatCard label="Visiting specialists" value={stats.visiting} icon={<Stethoscope className="h-5 w-5" />} />
         <StatCard label="Upcoming consultations" value={stats.upcoming} icon={<CalendarDays className="h-5 w-5" />} accent="blue" />
         <StatCard label="Booked this month" value={stats.thisMonth} icon={<BriefcaseMedical className="h-5 w-5" />} accent="green" />
-      </div>
+      </Figures>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchInput
@@ -91,9 +92,8 @@ export default function BookConsultant() {
         />
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : !consultants.length ? (
+      <Loaded load={load} what="the consultants" card skeleton={<ListSkeleton rows={4} />}>
+      {!consultants.length ? (
         <Card>
           <EmptyState
             icon={<Stethoscope className="h-6 w-6" />}
@@ -145,6 +145,7 @@ export default function BookConsultant() {
           ))}
         </div>
       )}
+      </Loaded>
 
       {/* Booking history */}
       <Card className="mt-6">
@@ -160,9 +161,8 @@ export default function BookConsultant() {
             />
           }
         />
-        {historyLoading ? (
-          <ListSkeleton rows={3} />
-        ) : !bookings.length ? (
+        <Loaded load={bookingList.load} what="the booking history" skeleton={<ListSkeleton rows={3} />}>
+        {!bookings.length ? (
           <EmptyState
             icon={<CalendarDays className="h-6 w-6" />}
             title={historyQ ? 'No bookings match' : 'No consultant bookings yet'}
@@ -201,6 +201,7 @@ export default function BookConsultant() {
             ))}
           </ul>
         )}
+        </Loaded>
       </Card>
 
       <BookingWizard

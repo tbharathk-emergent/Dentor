@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Select } from '@/components/ui/Field'
-import { EmptyState, ListSkeleton } from '@/components/ui/bits'
+import { EmptyState, ListSkeleton, Loaded } from '@/components/ui/bits'
 
 const CATEGORIES = ['X-ray', 'CBCT', 'OPG', 'Photo', 'Document', 'Other']
 const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
@@ -25,7 +25,7 @@ export function FilesTab({ patientCode }: { patientCode: string }) {
   const [deleting, setDeleting] = useState<Doc | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { data, isLoading } = useList('patient_files', { patientId: patientCode, sort: 'created_at', order: 'desc', limit: 200 })
+  const { data, load } = useList('patient_files', { patientId: patientCode, sort: 'created_at', order: 'desc', limit: 200 })
   const create = useCreate('patient_files', { successMessage: 'File uploaded' })
   const remove = useDelete('patient_files', { successMessage: 'File deleted' })
   const files = data?.items ?? []
@@ -81,9 +81,8 @@ export function FilesTab({ patientCode }: { patientCode: string }) {
           </Button>
         }
       />
-      {isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : !files.length ? (
+      <Loaded load={load} what="this patient’s files" skeleton={<ListSkeleton rows={4} />}>
+      {!files.length ? (
         <EmptyState
           icon={<FileText className="h-6 w-6" />}
           title="No files uploaded"
@@ -139,6 +138,7 @@ export function FilesTab({ patientCode }: { patientCode: string }) {
           })}
         </div>
       )}
+      </Loaded>
 
       <Dialog
         open={uploadOpen}

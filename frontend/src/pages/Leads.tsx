@@ -27,7 +27,7 @@ import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { DataTable, type Column } from '@/components/ui/DataTable'
 import { downloadCSV } from '@/components/growth/csv'
 
@@ -278,7 +278,7 @@ function FollowupDialog({ lead, onClose }: { lead: Doc | null; onClose: () => vo
 export default function Leads() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { data, isLoading } = useList('leads', { limit: 500, sort: 'created_at', order: 'desc' })
+  const { data, load } = useList('leads', { limit: 500, sort: 'created_at', order: 'desc' })
   const leads = data?.items ?? []
   const update = useUpdate('leads')
   const del = useDelete('leads', { successMessage: 'Lead deleted' })
@@ -405,7 +405,7 @@ export default function Leads() {
         subtitle="Capture, qualify, nurture and convert dental enquiries through one intelligent workspace"
         actions={
           <>
-            <Button variant="outline" onClick={exportCSV}>
+            <Button variant="outline" onClick={exportCSV} disabled={!data}>
               <Download className="h-4 w-4" /> <span className="hidden sm:inline">Export</span>
             </Button>
             <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
@@ -415,6 +415,8 @@ export default function Leads() {
         }
       />
 
+      {/* The figures, the pipeline and the table come from the one list: without it none of them is shown. */}
+      <Loaded load={load} what="the leads" card skeleton={<ListSkeleton rows={6} />}>
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
         <StatCard label="Total leads" value={kpis.total} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Qualified leads" hint="Qualified + Consultation" value={kpis.qualified} icon={<UserCheck className="h-5 w-5" />} accent="blue" />
@@ -423,7 +425,8 @@ export default function Leads() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchInput value={q} onChange={setQ} placeholder="Search name, mobile, treatment or ID…" className="min-w-0 flex-1 sm:max-w-xs" />
+        {/* min-w-40: on a phone the filters wrap below instead of squeezing the search box */}
+        <SearchInput value={q} onChange={setQ} placeholder="Search name, mobile, treatment or ID…" className="min-w-40 flex-1 sm:max-w-xs" />
         {view === 'table' ? (
           <>
             <Select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="w-32">
@@ -452,9 +455,7 @@ export default function Leads() {
         />
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={6} />
-      ) : view === 'pipeline' ? (
+      {view === 'pipeline' ? (
         <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
           {PIPELINE_STAGES.map((stage, si) => {
             const items = filtered.filter((l) => l.stage === stage)
@@ -557,6 +558,7 @@ export default function Leads() {
           />
         </Card>
       )}
+      </Loaded>
 
       {/* Lead detail */}
       <Dialog

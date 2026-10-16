@@ -15,7 +15,7 @@ import {
   Smartphone,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtDate, fmtINR, todayISO, useCreate, useDelete, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, todayISO, useCreate, useDelete, useList, useUpdate, type Doc, type LoadState } from '@/lib/hooks'
 import { cn } from '@/lib/cn'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -24,16 +24,17 @@ import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
 import { DataTable, type Column } from '@/components/ui/DataTable'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput } from '@/components/ui/bits'
+import { Avatar, EmptyState, ListSkeleton, Loaded, PageHeader, SearchInput } from '@/components/ui/bits'
 import { downloadCSV } from '@/components/growth/csv'
 
-const CHANNELS = ['WhatsApp', 'SMS', 'Email', 'Instagram', 'Website Chat']
+const CHANNELS = ['WhatsApp', 'SMS', 'Email', 'Instagram', 'Website Chat', 'Patient App']
 const CHANNEL_COLOR: Record<string, string> = {
   WhatsApp: '#20b75a',
   SMS: '#2279cf',
   Email: '#de6b2a',
   Instagram: '#c23a91',
   'Website Chat': '#7654c8',
+  'Patient App': '#0f766e',
 }
 const ASSIGNEES = ['Reception', 'Dr. Kumar', 'Dr. Anitha', 'Dr. Gowtham', 'Unassigned']
 const TEMPLATE_VARS = ['{{patient_name}}', '{{date}}', '{{time}}', '{{treatment}}', '{{amount}}']
@@ -87,7 +88,7 @@ function InboxTab({
 }) {
   const [search, setSearch] = useState('')
   const [chFilter, setChFilter] = useState('All')
-  const { data, isLoading } = useList('omni_conversations', { limit: 200, sort: 'updated_at', order: 'desc' })
+  const { data, load } = useList('omni_conversations', { limit: 200, sort: 'updated_at', order: 'desc' })
   const update = useUpdate('omni_conversations')
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -152,9 +153,8 @@ function InboxTab({
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <ListSkeleton rows={5} />
-          ) : !filtered.length ? (
+          <Loaded load={load} what="the conversations">
+          {!filtered.length ? (
             <EmptyState
               icon={<InboxIcon className="h-6 w-6" />}
               title="No conversations"
@@ -193,6 +193,7 @@ function InboxTab({
               })}
             </ul>
           )}
+          </Loaded>
         </div>
       </div>
 
@@ -449,7 +450,7 @@ function NewConversationDialog({
 
 const TEMPLATE_CATEGORIES = ['Utility', 'Clinical', 'Retention', 'Engagement', 'Laboratory']
 
-function TemplatesTab({ templates, isLoading, onUse }: { templates: Doc[]; isLoading: boolean; onUse: (t: Doc) => void }) {
+function TemplatesTab({ templates, load, onUse }: { templates: Doc[]; load: LoadState; onUse: (t: Doc) => void }) {
   const [search, setSearch] = useState('')
   const [chFilter, setChFilter] = useState('')
   const [formOpen, setFormOpen] = useState(false)
@@ -497,9 +498,8 @@ function TemplatesTab({ templates, isLoading, onUse }: { templates: Doc[]; isLoa
         </Button>
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : !filtered.length ? (
+      <Loaded load={load} what="the message templates" card skeleton={<ListSkeleton rows={4} />}>
+      {!filtered.length ? (
         <Card>
           <EmptyState
             icon={<LayoutTemplate className="h-6 w-6" />}
@@ -534,6 +534,7 @@ function TemplatesTab({ templates, isLoading, onUse }: { templates: Doc[]; isLoa
           ))}
         </div>
       )}
+      </Loaded>
 
       <Dialog
         open={formOpen}
@@ -617,7 +618,7 @@ function CampaignsTab() {
   const [viewing, setViewing] = useState<Doc | null>(null)
   const [deleting, setDeleting] = useState<Doc | null>(null)
   const [newOpen, setNewOpen] = useState(false)
-  const { data, isLoading } = useList('omni_campaigns', { limit: 200, sort: 'created_at', order: 'desc' })
+  const { data, load } = useList('omni_campaigns', { limit: 200, sort: 'created_at', order: 'desc' })
   const create = useCreate('omni_campaigns')
   const update = useUpdate('omni_campaigns')
   const del = useDelete('omni_campaigns', { successMessage: 'Campaign deleted' })
@@ -710,7 +711,8 @@ function CampaignsTab() {
           rows={campaigns}
           columns={columns}
           rowKey={(c) => c.id}
-          loading={isLoading}
+          load={load}
+          what="the campaigns"
           onRowClick={(c) => setViewing(c)}
           empty={
             <EmptyState
@@ -975,7 +977,7 @@ export default function Omni() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composer, setComposer] = useState('')
   const [newConvOpen, setNewConvOpen] = useState(false)
-  const { data: templateData, isLoading: templatesLoading } = useList('omni_templates', { limit: 100, sort: 'code', order: 'asc' })
+  const { data: templateData, load: templatesLoad } = useList('omni_templates', { limit: 100, sort: 'code', order: 'asc' })
   const { data: convData } = useList('omni_conversations', { limit: 200 })
   const templates = templateData?.items ?? []
   const unread = (convData?.items ?? []).reduce((s, c) => s + Number(c.unread || 0), 0)
@@ -1020,7 +1022,7 @@ export default function Omni() {
           onNewConversation={() => setNewConvOpen(true)}
         />
       )}
-      {tab === 'templates' && <TemplatesTab templates={templates} isLoading={templatesLoading} onUse={useTemplate} />}
+      {tab === 'templates' && <TemplatesTab templates={templates} load={templatesLoad} onUse={useTemplate} />}
       {tab === 'campaigns' && <CampaignsTab />}
 
       <NewConversationDialog

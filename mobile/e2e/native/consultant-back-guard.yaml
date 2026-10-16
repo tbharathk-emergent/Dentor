@@ -1,0 +1,94 @@
+# Android only: the hardware back button must not silently discard an unsaved prescription.
+# Needs the debug app installed, Metro running, and the API on a development database:
+#   maestro test e2e/native/consultant-back-guard.yaml
+appId: in.dentor.consultant
+---
+- launchApp:
+    clearState: true
+# First launch: the permissions list, the onboarding screen and the disclaimer, then the login.
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: consultant-back-guard-00-permissions
+- scrollUntilVisible:
+    element:
+      id: "welcome-continue"
+- tapOn:
+    id: "welcome-continue"
+- assertVisible:
+    id: "welcome-onboarding"
+- scrollUntilVisible:
+    element:
+      id: "welcome-login"
+- takeScreenshot: consultant-back-guard-00-onboarding
+- tapOn:
+    id: "welcome-login"
+- assertVisible:
+    id: "welcome-disclaimer"
+- tapOn:
+    id: "welcome-agree"
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 120000
+- waitForAnimationToEnd
+
+# Debug builds only. A release build talks to the production API and shows no such note:
+# the flow stops here, before any password is typed.
+- assertVisible:
+    id: "dev-build"
+- tapOn:
+    id: "login-email"
+- inputText: "kumar@dentor.in"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-password"
+- inputText: "Consultant@2026"
+# Tapping a plain label closes the keyboard the way a person would. (Maestro's own
+# hideKeyboard swipes from the middle of the screen, which on a tablet presses whatever is there.)
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "screen-today"
+    timeout: 30000
+- tapOn:
+    id: "tab-patients"
+- tapOn:
+    id: "patient-DEN-1001"
+- tapOn:
+    id: "write-prescription"
+- assertVisible:
+    id: "screen-prescribe"
+
+# With nothing typed, back simply leaves.
+- pressKey: Back
+- assertVisible:
+    id: "screen-patient"
+
+# With something typed, back asks first; "Not now" keeps the form and what was typed.
+- tapOn:
+    id: "write-prescription"
+- tapOn:
+    id: "rx-diagnosis-input"
+- inputText: "Pulpitis"
+# Android only, where hideKeyboard is dependable: the keyboard must be closed, or the Back key below would only close it.
+- hideKeyboard
+- pressKey: Back
+- assertVisible: "Discard this prescription?"
+- tapOn:
+    id: "confirm-no"
+- assertVisible:
+    id: "screen-prescribe"
+- assertVisible: "Pulpitis"
+
+# Confirming the discard leaves the form.
+- pressKey: Back
+- tapOn:
+    id: "confirm-yes"
+- assertVisible:
+    id: "screen-patient"

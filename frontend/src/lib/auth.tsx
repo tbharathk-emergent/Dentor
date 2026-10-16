@@ -1,7 +1,10 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
-import { api, clearSession, getStoredUser, getToken, setActiveClinic, setSession, type ActiveClinic } from './api'
+import { API_BASE_URL, api, clearSession, getStoredUser, getToken, setActiveClinic, setSession, type ActiveClinic } from './api'
 
 export const SUPER_ADMIN_ROLE = 'Super Admin'
+// The roles that run a clinic: they manage its sign-ins and change its settings and dashboard banner.
+// The API refuses everyone else (403); the app uses this to not offer what would be refused.
+const CLINIC_ADMIN_ROLES = ['Clinic Owner', 'Administrator']
 
 export interface User {
   id: string
@@ -17,11 +20,36 @@ interface AuthCtx {
   user: User | null
   isAuthenticated: boolean
   isSuperAdmin: boolean
+  /** Clinic Owner, Administrator, or the Super Admin managing a clinic. */
+  isClinicAdmin: boolean
   login: (email: string, password: string, remember: boolean) => Promise<void>
   logout: () => void
 }
 
 const Ctx = createContext<AuthCtx>(null!)
+
+/**
+ * Ends the session on the server, so the token stops working there and not only in this
+ * browser. Never throws and never holds sign-out up for long: offline, the browser still
+ * signs out and the token simply expires.
+ */
+async function endServerSession(): Promise<void> {
+  const token = getToken()
+  if (!token) return
+  try {
+    await Promise.race([
+      fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: '{}',
+        keepalive: true, // still delivered if the page has already moved on
+      }),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ])
+  } catch {
+    /* unreachable API: nothing more to do */
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => (getToken() ? getStoredUser<User>() : null))
@@ -38,15 +66,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
-    clearSession()
-    setUser(null)
-    location.assign('/login')
+    void endServerSession().finally(() => {
+      clearSession()
+      setUser(null)
+      location.assign('/login')
+    })
   }, [])
 
+  const isSuperAdmin = user?.role === SUPER_ADMIN_ROLE
+  const isClinicAdmin = isSuperAdmin || CLINIC_ADMIN_ROLES.includes(user?.role ?? '')
+
   return (
-    <Ctx.Provider
-      value={{ user, isAuthenticated: !!user, isSuperAdmin: user?.role === SUPER_ADMIN_ROLE, login, logout }}
-    >
+    <Ctx.Provider value={{ user, isAuthenticated: !!user, isSuperAdmin, isClinicAdmin, login, logout }}>
       {children}
     </Ctx.Provider>
   )

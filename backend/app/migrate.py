@@ -10,7 +10,7 @@ import logging
 from pymongo.errors import DuplicateKeyError
 
 from .auth import SUPER_ADMIN_ROLE, hash_password, verify_password
-from .config import IS_PROD, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, _DEV_SUPER_ADMIN_PASSWORD, super_admin_bootstrap_password
+from .config import IS_PROD, NOTIFICATION_RETENTION_DAYS, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, _DEV_SUPER_ADMIN_PASSWORD, super_admin_bootstrap_password
 from .tenancy import TenantDB
 from .util import next_sequence, now_iso
 
@@ -53,8 +53,46 @@ async def ensure_tenancy(db, tenant_collections: list[str], create_demo: bool = 
     for name in [*tenant_collections, "activities", "users"]:
         await db[name].create_index("clinic_id")
 
+    await _ensure_app_indexes(db)
     await _ensure_super_admin(db)
     return clinic_id
+
+
+async def _ensure_app_indexes(db) -> None:
+    """Collections behind the mobile apps: patient accounts, sessions, OTPs, notifications."""
+    await db.patient_accounts.create_index("mobile", unique=True)
+    await db.patient_accounts.create_index(
+        "email", unique=True, partialFilterExpression={"email": {"$type": "string"}}
+    )
+    await db.refresh_tokens.create_index("token_hash", unique=True)
+    await db.refresh_tokens.create_index([("kind", 1), ("subject", 1)])
+    await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.refresh_tokens.create_index("family")
+    # Signed-out sessions, kept only until their last access token would have expired.
+    await db.ended_sessions.create_index("expires_at", expireAfterSeconds=0)
+    # Kept for two hours so the hourly send limit can count them; codes themselves expire in minutes.
+    await db.otp_codes.create_index("created_at", expireAfterSeconds=7200)
+    await db.otp_codes.create_index([("mobile", 1), ("purpose", 1), ("created_at", -1)])
+    await db.email_codes.create_index("created_at", expireAfterSeconds=7200)
+    await db.email_codes.create_index([("email", 1), ("purpose", 1), ("created_at", -1)])
+    await db.signup_applications.create_index([("email", 1), ("created_at", -1)])
+    await db.signup_applications.create_index("status")
+    await db.device_credentials.create_index([("kind", 1), ("device_id", 1)])
+    await db.device_credentials.create_index([("kind", 1), ("subject", 1)])
+    await db.device_tokens.create_index("token", unique=True)
+    await db.device_tokens.create_index([("owner_kind", 1), ("owner_id", 1)])
+    await db.notifications.create_index([("clinic_id", 1), ("to_kind", 1), ("to_id", 1), ("created_at", -1)])
+    # Retention: MongoDB deletes a notification once its `expires_at` has passed.
+    await db.notifications.create_index("expires_at", expireAfterSeconds=0)
+    if NOTIFICATION_RETENTION_DAYS > 0:
+        # Notifications written before the retention rule existed get their date from `created_at`.
+        await db.notifications.update_many(
+            {"expires_at": {"$exists": False}},
+            [{"$set": {"expires_at": {"$dateAdd": {
+                "startDate": {"$dateFromString": {"dateString": "$created_at", "onError": "$$NOW", "onNull": "$$NOW"}},
+                "unit": "day", "amount": NOTIFICATION_RETENTION_DAYS,
+            }}}}],
+        )
 
 
 async def _ensure_super_admin(db) -> None:

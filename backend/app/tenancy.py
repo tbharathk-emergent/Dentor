@@ -42,11 +42,17 @@ class ScopedCollection:
     def update_one(self, query, update, **kwargs):
         return self._col.update_one(self._scope(query), update, **kwargs)
 
+    def update_many(self, query, update, **kwargs):
+        return self._col.update_many(self._scope(query), update, **kwargs)
+
     def find_one_and_update(self, query, update, **kwargs):
         return self._col.find_one_and_update(self._scope(query), update, **kwargs)
 
     def delete_one(self, query):
         return self._col.delete_one(self._scope(query))
+
+    def delete_many(self, query):
+        return self._col.delete_many(self._scope(query))
 
     def aggregate(self, pipeline: list, **kwargs):
         return self._col.aggregate([{"$match": {"clinic_id": self._clinic_id}}, *pipeline], **kwargs)

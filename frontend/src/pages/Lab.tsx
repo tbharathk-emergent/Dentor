@@ -12,7 +12,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtDate, fmtINR, todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, isoDate, todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
 import { Badge, StatusBadge, type Tone } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -20,7 +20,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { EmptyState, Figures, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { PatientPicker } from '@/components/ops/PatientPicker'
 import { cn } from '@/lib/cn'
 
@@ -434,7 +434,7 @@ function OrderDetailDialog({
   onRecordPayment: (o: Doc) => void
 }) {
   const update = useUpdate('lab_orders', { successMessage: 'Lab workflow updated' })
-  const { data: paymentData, isLoading: paymentsLoading } = useList(
+  const { data: paymentData, load: paymentsLoad } = useList(
     'lab_payments',
     { orderId: order?.id ?? '', limit: 100 },
     { enabled: !!order },
@@ -564,9 +564,8 @@ function OrderDetailDialog({
         {/* Payments */}
         <div>
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</h4>
-          {paymentsLoading ? (
-            <ListSkeleton rows={2} />
-          ) : !payments.length ? (
+          <Loaded load={paymentsLoad} what="the payments for this order" skeleton={<ListSkeleton rows={2} />}>
+          {!payments.length ? (
             <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-[13px] text-slate-400">
               No payments recorded for this order yet.
             </p>
@@ -586,6 +585,7 @@ function OrderDetailDialog({
               ))}
             </ul>
           )}
+          </Loaded>
         </div>
       </div>
     </Dialog>
@@ -607,9 +607,9 @@ export default function Lab() {
   const [detail, setDetail] = useState<Doc | null>(null)
   const [payTarget, setPayTarget] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('lab_orders', { q, sort: 'created_at', order: 'desc', limit: 500 })
+  const { data, load } = useList('lab_orders', { q, sort: 'created_at', order: 'desc', limit: 500 })
   const orders = data?.items ?? []
-  const { data: payData, isLoading: payLoading } = useList(
+  const { data: payData, load: payLoad } = useList(
     'lab_payments',
     { sort: 'created_at', order: 'desc', limit: 500 },
     { enabled: tab === 'payments' },
@@ -631,7 +631,7 @@ export default function Lab() {
     const today = todayISO()
     const weekEnd = new Date()
     weekEnd.setDate(weekEnd.getDate() + 7)
-    const weekEndISO = weekEnd.toISOString().slice(0, 10)
+    const weekEndISO = isoDate(weekEnd)
     const active = orders.filter((o) => o.stage !== 'Delivered' && o.status !== 'Delivered').length
     const dueWeek = orders.filter(
       (o) => o.stage !== 'Delivered' && o.due && o.due >= today && o.due <= weekEndISO,
@@ -806,12 +806,13 @@ export default function Lab() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+      {/* On the Payments tab the orders are not on screen, so their failure is reported with the figures. */}
+      <Figures load={load} what={tab === 'payments' ? 'the order figures' : undefined} className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
         <StatCard label="Active orders" value={kpis.active} icon={<FlaskConical className="h-5 w-5" />} />
         <StatCard label="Due this week" value={kpis.dueWeek} icon={<CalendarClock className="h-5 w-5" />} accent="amber" />
         <StatCard label="Delayed" value={kpis.delayed} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
         <StatCard label="Outstanding" value={fmtINR(kpis.outstanding)} icon={<IndianRupee className="h-5 w-5" />} accent="blue" />
-      </div>
+      </Figures>
 
       <Tabs
         className="mb-4"
@@ -819,7 +820,7 @@ export default function Lab() {
         onChange={(k) => setTab(k as typeof tab)}
         tabs={[
           { key: 'board', label: 'Board' },
-          { key: 'list', label: 'Orders', count: orders.length },
+          { key: 'list', label: 'Orders', count: data && orders.length },
           { key: 'payments', label: 'Payments' },
         ]}
       />
@@ -846,10 +847,9 @@ export default function Lab() {
         </div>
       )}
 
-      {tab === 'board' &&
-        (isLoading ? (
-          <ListSkeleton rows={6} />
-        ) : !orders.length ? (
+      {tab === 'board' && (
+        <Loaded load={load} what="the lab orders" card skeleton={<ListSkeleton rows={6} />}>
+        {!orders.length ? (
           <Card>
             <EmptyState
               icon={<FlaskConical className="h-6 w-6" />}
@@ -881,7 +881,9 @@ export default function Lab() {
               )
             })}
           </div>
-        ))}
+        )}
+        </Loaded>
+      )}
 
       {tab === 'list' && (
         <Card>
@@ -889,7 +891,8 @@ export default function Lab() {
             rows={filtered}
             columns={orderColumns}
             rowKey={(o) => o.id}
-            loading={isLoading}
+            load={load}
+            what="the lab orders"
             onRowClick={(o) => setDetail(o)}
             empty={
               <EmptyState
@@ -923,7 +926,8 @@ export default function Lab() {
             rows={payments}
             columns={paymentColumns}
             rowKey={(p) => p.id}
-            loading={payLoading}
+            load={payLoad}
+            what="the lab payments"
             empty={
               <EmptyState
                 icon={<ReceiptText className="h-6 w-6" />}

@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput } from '@/components/ui/bits'
+import { Avatar, EmptyState, LoadError, Loaded, PageHeader, SearchInput } from '@/components/ui/bits'
 
 const DOCTORS = ['Dr. Vivekanandan M', 'Dr. Kumar', 'Dr. Anitha', 'Dr. Gowtham']
 
@@ -28,7 +28,7 @@ export default function Certificates() {
   const [viewCert, setViewCert] = useState<Doc | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('certificates', {
+  const { data, load } = useList('certificates', {
     q, ...(tab !== 'all' ? { type: tab } : {}), sort: 'created_at', order: 'desc',
   })
   const rows = data?.items ?? []
@@ -58,9 +58,8 @@ export default function Certificates() {
       </div>
 
       <Card>
-        {isLoading ? (
-          <ListSkeleton rows={5} />
-        ) : !rows.length ? (
+        <Loaded load={load} what="the certificates">
+        {!rows.length ? (
           <EmptyState
             icon={<BadgeCheck className="h-6 w-6" />}
             title="No certificates yet"
@@ -87,6 +86,7 @@ export default function Certificates() {
             ))}
           </ul>
         )}
+        </Loaded>
       </Card>
 
       <CertificateDialog open={formOpen} onClose={() => setFormOpen(false)} type={formType} setType={setFormType} />
@@ -117,7 +117,7 @@ function CertificateDialog({
   const [pq, setPq] = useState('')
   const [showList, setShowList] = useState(false)
   const [form, setForm] = useState<Record<string, string>>({})
-  const { data: patients } = useList('patients', { q: pq, limit: 8 }, { enabled: open })
+  const { data: patients, load: patientsLoad } = useList('patients', { q: pq, limit: 8 }, { enabled: open })
   const create = useCreate('certificates', { successMessage: 'Certificate generated' })
 
   useEffect(() => {
@@ -191,6 +191,7 @@ function CertificateDialog({
             </div>
           )}
         </Field>
+        {patientsLoad.failed && !patient && <LoadError compact what="the patient search" load={patientsLoad} />}
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date" required>

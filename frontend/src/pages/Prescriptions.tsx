@@ -9,7 +9,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, PageHeader, SearchInput } from '@/components/ui/bits'
+import { EmptyState, LoadError, PageHeader, SearchInput } from '@/components/ui/bits'
 import { PatientPicker } from '@/components/rx/PatientPicker'
 import { blankMed, medDuration, normalizeMed, openPrintWindow, rxSheetHTML, type RxMed } from '@/components/rx/print'
 
@@ -351,7 +351,11 @@ export default function Prescriptions() {
                     {c.name}
                   </button>
                 ))}
-                {!combos.length && <span className="text-xs text-slate-400">No combos saved yet.</span>}
+                {combosQ.load.failed ? (
+                  <LoadError compact what="the saved combos" load={combosQ.load} className="w-full" />
+                ) : (
+                  !combos.length && combosQ.data && <span className="text-xs text-slate-400">No combos saved yet.</span>
+                )}
                 <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setComboOpen(true)}>
                   <Plus className="h-3.5 w-3.5" /> Save current as combo
                 </Button>
@@ -392,7 +396,8 @@ export default function Prescriptions() {
             rows={history}
             columns={histColumns}
             rowKey={(r) => r.id}
-            loading={historyQ.isLoading}
+            load={historyQ.load}
+            what="the prescriptions"
             onRowClick={(r) => setPreview(r)}
             empty={
               <EmptyState

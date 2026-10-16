@@ -6,7 +6,7 @@ import { fmtDate, fmtINR, fmtTime, todayISO, useCreate, useList, type Doc } from
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
-import { Avatar } from '@/components/ui/bits'
+import { Avatar, LoadError } from '@/components/ui/bits'
 import { PatientFormDialog } from '@/pages/Patients'
 import { cn } from '@/lib/cn'
 
@@ -85,13 +85,16 @@ export function BookingWizard({
 
   const selected = consultants.find((c) => c.id === consultantId)
 
-  const { data: patientData } = useList('patients', { q: patientQuery, limit: 8 }, { enabled: open })
-  const { data: dayBookings } = useList(
+  const { data: patientData, load: patientsLoad } = useList('patients', { q: patientQuery, limit: 8 }, { enabled: open })
+  // Both lookups guard the booking: which times are taken, and whether this patient already saw
+  // this consultant this month. If one cannot be loaded, the wizard says so and does not go on as
+  // if the answer were "none".
+  const { data: dayBookings, load: dayLoad } = useList(
     'consultant_bookings',
     { consultant: selected?.name, date, limit: 100 },
     { enabled: open && !!selected },
   )
-  const { data: patientBookings } = useList(
+  const { data: patientBookings, load: earlierLoad } = useList(
     'consultant_bookings',
     { consultant: selected?.name, patientCode, limit: 100 },
     { enabled: open && !!selected && !!patientCode },
@@ -216,12 +219,12 @@ export function BookingWizard({
         </Button>
       )}
       {step === 2 && (
-        <Button disabled={!patient || !consent || !!duplicate} onClick={() => setStep(3)}>
+        <Button disabled={!patient || !consent || !!duplicate || earlierLoad.failed} onClick={() => setStep(3)}>
           Review Booking
         </Button>
       )}
       {step === 3 && (
-        <Button loading={confirming} disabled={!!duplicate} onClick={confirm}>
+        <Button loading={confirming} disabled={!!duplicate || earlierLoad.failed || dayLoad.failed} onClick={confirm}>
           <Check className="h-4 w-4" /> Confirm Booking
         </Button>
       )}
@@ -337,17 +340,23 @@ export function BookingWizard({
                   <span className="mb-1.5 block text-[13px] font-medium text-slate-700">
                     Time Slot<span className="ml-0.5 text-red-500">*</span>
                   </span>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Morning</div>
-                      <div className="grid grid-cols-4 gap-1.5">{AM_SLOTS.map(slotButton)}</div>
-                    </div>
-                    <div>
-                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Afternoon</div>
-                      <div className="grid grid-cols-4 gap-1.5">{PM_SLOTS.map(slotButton)}</div>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">Struck-out slots are already booked for this consultant.</p>
+                  {dayLoad.failed ? (
+                    <LoadError compact what="the times already booked" load={dayLoad} />
+                  ) : (
+                    <>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Morning</div>
+                          <div className="grid grid-cols-4 gap-1.5">{AM_SLOTS.map(slotButton)}</div>
+                        </div>
+                        <div>
+                          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Afternoon</div>
+                          <div className="grid grid-cols-4 gap-1.5">{PM_SLOTS.map(slotButton)}</div>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">Struck-out slots are already booked for this consultant.</p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -407,6 +416,9 @@ export function BookingWizard({
                     )}
                   </Field>
                 </div>
+
+                {patientsLoad.failed && !patient && <LoadError compact what="the patient search" load={patientsLoad} />}
+                {earlierLoad.failed && <LoadError compact what="this patient’s earlier bookings" load={earlierLoad} />}
 
                 {duplicate && (
                   <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700">

@@ -3,7 +3,7 @@ import { ChevronDown, X } from 'lucide-react'
 import { useList, type Doc } from '@/lib/hooks'
 import { cn } from '@/lib/cn'
 import { inputBase } from '@/components/ui/Field'
-import { Avatar } from '@/components/ui/bits'
+import { Avatar, LoadError } from '@/components/ui/bits'
 
 /** Searchable patient combobox backed by the patients API. */
 export function PatientPicker({
@@ -21,7 +21,7 @@ export function PatientPicker({
   const [q, setQ] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useList('patients', { q, limit: 12, sort: 'name', order: 'asc' }, { enabled: open })
+  const { data, isLoading, load } = useList('patients', { q, limit: 12, sort: 'name', order: 'asc' }, { enabled: open })
   const items = data?.items ?? []
 
   useEffect(() => {
@@ -64,7 +64,9 @@ export function PatientPicker({
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       {open && (
         <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-pop">
-          {isLoading ? (
+          {load.failed ? (
+            <LoadError compact what="the patient search" load={load} className="m-1.5" />
+          ) : isLoading ? (
             <div className="px-3 py-3 text-[13px] text-slate-400">Searching patients…</div>
           ) : !items.length ? (
             <div className="px-3 py-3 text-[13px] text-slate-400">No patients match “{q}”.</div>

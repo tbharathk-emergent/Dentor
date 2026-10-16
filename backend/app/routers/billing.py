@@ -4,10 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user
+from ..hooks import after_payment
+from ..roles import require_staff
 from ..rules import clinic_settings
 from ..tenancy import TenantDB, get_tenant
-from ..util import next_sequence, now_iso, serialize, to_object_id
+from ..util import inr, next_sequence, now_iso, serialize, to_object_id
 
 router = APIRouter(prefix="/api", tags=["billing"])
 
@@ -24,7 +25,7 @@ class PaymentBody(BaseModel):
 
 
 @router.post("/payments/record", status_code=201)
-async def record_payment(body: PaymentBody, user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+async def record_payment(body: PaymentBody, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
     if body.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero.")
 
@@ -37,14 +38,14 @@ async def record_payment(body: PaymentBody, user: dict = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Invoice not found")
         balance = float(inv.get("balance", inv.get("total", 0)))
         if body.amount > balance + 0.01:
-            raise HTTPException(status_code=400, detail=f"Amount exceeds invoice balance (₹{balance:,.0f}).")
+            raise HTTPException(status_code=400, detail=f"Amount exceeds invoice balance ({inr(balance)}).")
         settings = await clinic_settings(tdb)
         if not settings.get("partialPayments", True) and body.amount < balance - 0.01:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Partial payments are disabled for this clinic — collect the full balance of "
-                    f"₹{balance:,.0f}, or enable 'Partial payments' in Settings."
+                    f"{inr(balance)}, or enable 'Partial payments' in Settings."
                 ),
             )
         new_paid = float(inv.get("paid", 0)) + body.amount
@@ -72,14 +73,15 @@ async def record_payment(body: PaymentBody, user: dict = Depends(get_current_use
     }
     result = await tdb.payments.insert_one(doc)
     await tdb.activities.insert_one(
-        {"type": "accounts", "message": f"Payment of ₹{body.amount:,.0f} received from {body.patient}", "at": now_iso(), "user": user["email"]}
+        {"type": "accounts", "message": f"Payment of {inr(body.amount)} received from {body.patient}", "at": now_iso(), "user": user["email"]}
     )
     saved = await tdb.payments.find_one({"_id": result.inserted_id})
+    await after_payment(tdb, saved)
     return serialize(saved)
 
 
 @router.get("/accounts/summary")
-async def accounts_summary(date_from: str = "", date_to: str = "", user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+async def accounts_summary(date_from: str = "", date_to: str = "", user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
     match: dict = {}
     if date_from or date_to:
         rng: dict = {}

@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
-import { EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { EmptyState, Figures, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { cn } from '@/lib/cn'
 
 const TYPES = ['Schedule', 'Note']
@@ -217,7 +217,7 @@ export default function ScheduleNotes() {
     }
   }, [params, setParams])
 
-  const { data, isLoading } = useList('schedule_notes', {
+  const { data, load } = useList('schedule_notes', {
     q,
     ...(date ? { date } : {}),
     ...(type ? { type } : {}),
@@ -229,7 +229,7 @@ export default function ScheduleNotes() {
   })
   const notes = data?.items ?? []
 
-  const { data: todayData } = useList('schedule_notes', { date: todayISO(), limit: 300 })
+  const { data: todayData, load: todayLoad } = useList('schedule_notes', { date: todayISO(), limit: 300 })
   const kpis = useMemo(() => {
     const items = todayData?.items ?? []
     return {
@@ -301,12 +301,12 @@ export default function ScheduleNotes() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+      <Figures load={todayLoad} what="today’s figures" className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
         <StatCard label="Today's entries" value={kpis.today} icon={<StickyNote className="h-5 w-5" />} />
         <StatCard label="Pending" value={kpis.pending} icon={<Clock className="h-5 w-5" />} accent="amber" />
         <StatCard label="High priority" value={kpis.high} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
         <StatCard label="Completed" value={kpis.completed} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" />
-      </div>
+      </Figures>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
@@ -339,9 +339,8 @@ export default function ScheduleNotes() {
         </Select>
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={5} />
-      ) : !notes.length ? (
+      <Loaded load={load} what="the schedule" card>
+      {!notes.length ? (
         <Card>
           <EmptyState
             icon={<StickyNote className="h-6 w-6" />}
@@ -436,6 +435,7 @@ export default function ScheduleNotes() {
           </ul>
         </Card>
       )}
+      </Loaded>
 
       <NoteFormDialog open={formOpen} onClose={() => setFormOpen(false)} editing={editing} />
 

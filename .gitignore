@@ -5,4 +5,31 @@ venv/
 __pycache__/
 *.pyc
 .env
+.env.local
+.env.*.local
 .DS_Store
+
+# Credentials and signing material: never committed (docs/INTEGRATIONS.md, docs/MOBILE_BUILD.md).
+# The Android debug keystores (React Native's public debug key) stay tracked, see mobile/.gitignore.
+google-services.json
+GoogleService-Info.plist
+*.p8
+*.p12
+*.pem
+*.mobileprovision
+*.provisionprofile
+ExportOptions.plist
+service-account*.json
+
+# Built app packages
+*.apk
+*.aab
+*.ipa
+*.xcarchive/
+
+# Figma exports used for the design review (about 470 MB). Kept on disk, never committed:
+# the originals live in Figma. See docs/DESIGN_REVIEW.md.
+docs/design/*.fig
+docs/design/*.pdf
+docs/design/**/*.fig
+docs/design/**/*.pdf

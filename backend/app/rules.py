@@ -47,6 +47,10 @@ async def validate_appointment(tdb, payload: dict, existing: dict | None) -> Non
     """
     merged = {**(existing or {}), **payload}
     status = merged.get("status", "Scheduled")
+    # a booked appointment moved to another day or time keeps where it was (the "Rescheduled" lists)
+    if existing and existing.get("status") in ACTIVE_APPT_STATUSES and "rescheduledFrom" not in payload and (
+            (payload.get("date") and payload["date"] != existing.get("date")) or (payload.get("time") and payload["time"] != existing.get("time"))):
+        payload["rescheduledFrom"] = {"date": existing.get("date", ""), "time": existing.get("time", "")}
     if status not in ACTIVE_APPT_STATUSES:
         return  # cancelling or completing can never create a new overlap
     date, time_, doctor, chair = merged.get("date"), merged.get("time"), merged.get("doctor"), merged.get("chair")
@@ -125,3 +129,24 @@ async def validate_invoice(tdb, payload: dict, existing: dict | None) -> None:
         expected = max(0, float(merged["total"]) - float(merged["paid"]))
         if abs(float(payload["balance"]) - expected) > 1:
             payload["balance"] = round(expected) if round_off else expected
+
+
+
+# ------------------------------------------------------------- treatment fees
+
+async def validate_treatment_master(tdb, payload: dict, existing: dict | None) -> None:
+    """The procedure form (cms.fig 328:2428): fee, GST, duration and the doctor's share stay sensible numbers."""
+    merged = {**(existing or {}), **payload}
+    if len(str(merged.get("name", "")).strip()) < 2:
+        raise HTTPException(status_code=400, detail="Give the procedure a name.")
+    checks = (("price", 0, 10_000_000, "The fee"), ("tax", 0, 28, "GST"), ("duration", 5, 480, "The duration"), ("doctorShare", 0, 100, "The doctor's share"))
+    for field, low, high, label in checks:
+        if field not in payload:
+            continue
+        try:
+            value = float(payload[field])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{label} must be a number.")
+        if not low <= value <= high:
+            raise HTTPException(status_code=400, detail=f"{label} must be between {low} and {high}.")
+        payload[field] = value

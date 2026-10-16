@@ -25,7 +25,7 @@ import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Tabs'
 import { DataTable, type Column } from '@/components/ui/DataTable'
-import { EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { EmptyState, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { PatientPicker } from '@/components/clinical/PatientPicker'
 
 const STAGES = [
@@ -84,7 +84,7 @@ export default function Frs() {
   const [editing, setEditing] = useState<Doc | null>(null)
   const [deleting, setDeleting] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('frs_records', { sort: 'created_at', order: 'desc', limit: 500 })
+  const { data, load } = useList('frs_records', { sort: 'created_at', order: 'desc', limit: 500 })
   const all = data?.items ?? []
 
   const update = useUpdate('frs_records')
@@ -246,6 +246,8 @@ export default function Frs() {
         }
       />
 
+      {/* Every figure, the board and the archive come from the one list: without it none of them is shown. */}
+      <Loaded load={load} what="the revenue pipeline" card skeleton={<ListSkeleton rows={6} />}>
       {/* KPIs */}
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <StatCard label="Total pipeline" value={fmtINR(kpis.pipeline)} icon={<IndianRupee className="h-5 w-5" />} hint={`${open.length} open opportunities`} />
@@ -277,9 +279,7 @@ export default function Frs() {
         />
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={6} />
-      ) : !open.length && !q ? (
+      {!open.length && !q ? (
         <Card>
           <EmptyState
             icon={<TrendingUp className="h-6 w-6" />}
@@ -455,6 +455,7 @@ export default function Frs() {
             </ul>
           ))}
       </Card>
+      </Loaded>
 
       <FrsDialog open={formOpen} onClose={() => setFormOpen(false)} editing={editing} />
 

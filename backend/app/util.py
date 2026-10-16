@@ -56,3 +56,17 @@ def text_filter(q: Optional[str], fields: list[str]) -> dict:
         return {}
     rx = {"$regex": re.escape(q), "$options": "i"}
     return {"$or": [{f: rx} for f in fields]}
+
+
+def inr(amount) -> str:
+    """Rupees the way every Dentor app prints them: Indian digit grouping, no decimals (₹1,50,000)."""
+    try:
+        n = int(round(float(amount or 0)))
+    except (TypeError, ValueError):
+        n = 0
+    sign, digits = ("-" if n < 0 else ""), str(abs(n))
+    if len(digits) > 3:
+        head, tail = digits[:-3], digits[-3:]
+        head = re.sub(r"(?<=\d)(?=(\d\d)+$)", ",", head)
+        digits = f"{head},{tail}"
+    return f"{sign}₹{digits}"

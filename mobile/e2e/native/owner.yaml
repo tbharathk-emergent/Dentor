@@ -1,0 +1,167 @@
+# Native smoke test for the Dentor Clinic app (was Owner) (Android emulator or iOS simulator).
+# Needs the debug app installed, Metro running, and the API on a development database:
+#   maestro test e2e/native/owner.yaml
+appId: in.dentor.owner
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+# First launch: the permissions list, the onboarding screen and the disclaimer, then the login.
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: owner-00-permissions
+- scrollUntilVisible:
+    element:
+      id: "welcome-continue"
+- tapOn:
+    id: "welcome-continue"
+- assertVisible:
+    id: "welcome-onboarding"
+- scrollUntilVisible:
+    element:
+      id: "welcome-login"
+- takeScreenshot: owner-00-onboarding
+- tapOn:
+    id: "welcome-login"
+- assertVisible:
+    id: "welcome-disclaimer"
+- tapOn:
+    id: "welcome-agree"
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 120000
+- waitForAnimationToEnd
+
+# Debug builds only. A release build talks to the production API and shows no such note:
+# the flow stops here, before any password is typed.
+- assertVisible:
+    id: "dev-build"
+- takeScreenshot: owner-01-login
+
+# A wrong password is refused and the form stays put.
+- tapOn:
+    id: "login-email"
+- inputText: "owner@dentor.in"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-password"
+- inputText: "not-the-password"
+# Tapping a plain label closes the keyboard the way a person would. (Maestro's own
+# hideKeyboard swipes from the middle of the screen, which on a tablet presses whatever is there.)
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "Incorrect email or password."
+
+# The right one signs in and lands on the designed home.
+- tapOn:
+    id: "login-password"
+- eraseText: 30
+- inputText: "Owner@2026"
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+- takeScreenshot: owner-02-home
+
+# The side menu opens the clinic overview and the team.
+- tapOn:
+    id: "open-menu"
+# the menu is longer than the screen: scroll to the entry first
+- scrollUntilVisible:
+    element:
+      id: "menu-figures"
+- tapOn:
+    id: "menu-figures"
+- extendedWaitUntil:
+    visible:
+      id: "overview-screen"
+    timeout: 30000
+- takeScreenshot: owner-02b-overview
+- tapOn:
+    id: "back"
+- tapOn:
+    id: "open-menu"
+# the menu is longer than the screen: scroll to the entry first
+- scrollUntilVisible:
+    element:
+      id: "menu-team"
+- tapOn:
+    id: "menu-team"
+- assertVisible:
+    id: "team-screen"
+- takeScreenshot: owner-04-team
+# The team is a tab without its own button in the bar: the bar's other tabs take you on.
+
+# Every tab opens its screen.
+- tapOn:
+    id: "tab-finance"
+- assertVisible:
+    id: "finance-screen"
+- takeScreenshot: owner-03-finance
+- tapOn:
+    id: "tab-operations"
+- assertVisible:
+    id: "operations-screen"
+- tapOn:
+    id: "tab-more"
+- assertVisible:
+    id: "more-screen"
+
+# The design's Settings screen (dentor.fig 281), pushed from More, and back again.
+- tapOn:
+    id: "more-settings"
+- assertVisible:
+    id: "settings-screen"
+- assertVisible:
+    id: "settings-change-password"
+- takeScreenshot: owner-05a-settings
+- tapOn:
+    id: "back"
+- assertVisible:
+    id: "more-screen"
+
+# A screen pushed over the tabs, and back again.
+- scrollUntilVisible:
+    element:
+      id: "more-clinic-rules"
+- tapOn:
+    id: "more-clinic-rules"
+- assertVisible:
+    id: "clinic-rules-screen"
+- takeScreenshot: owner-05-clinic-rules
+- tapOn:
+    id: "back"
+- assertVisible:
+    id: "more-screen"
+
+# The session is kept in the keychain / keystore: a restart opens the app signed in.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 120000
+
+# Sign out returns to the login screen.
+- tapOn:
+    id: "tab-more"
+- scrollUntilVisible:
+    element:
+      id: "more-sign-out"
+- tapOn:
+    id: "more-sign-out"
+- tapOn:
+    id: "confirm-yes"
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 15000

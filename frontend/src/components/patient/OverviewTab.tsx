@@ -5,14 +5,15 @@ import { fmtDate, fmtINR, fmtTime, todayISO, useList, type Doc } from '@/lib/hoo
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { EmptyState, Skeleton } from '@/components/ui/bits'
+import { EmptyState, Loaded, Skeleton } from '@/components/ui/bits'
 import { cn } from '@/lib/cn'
 
 function InfoItem({ label, value, className }: { label: string; value: ReactNode; className?: string }) {
   return (
-    <div className={className}>
+    <div className={cn('min-w-0', className)}>
       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-0.5 text-[13px] font-medium text-slate-800">{value || '—'}</div>
+      {/* break-words: an email or a long address must wrap inside its column, not widen the page */}
+      <div className="mt-0.5 break-words text-[13px] font-medium text-slate-800">{value || '—'}</div>
     </div>
   )
 }
@@ -37,8 +38,8 @@ export function OverviewTab({ patient, onGoTab }: { patient: Doc; onGoTab: (tab:
   const navigate = useNavigate()
   const code = patient.code
 
-  const { data: apptData, isLoading: apptsLoading } = useList('appointments', { patientCode: code, limit: 200, sort: 'date', order: 'desc' })
-  const { data: invData, isLoading: invLoading } = useList('invoices', { patientCode: code, sort: 'date', order: 'desc', limit: 200 })
+  const { data: apptData, load: apptsLoad } = useList('appointments', { patientCode: code, limit: 200, sort: 'date', order: 'desc' })
+  const { data: invData, load: invLoad } = useList('invoices', { patientCode: code, sort: 'date', order: 'desc', limit: 200 })
 
   const today = todayISO()
   const { upcoming, recent } = useMemo(() => {
@@ -95,12 +96,17 @@ export function OverviewTab({ patient, onGoTab }: { patient: Doc; onGoTab: (tab:
               </Button>
             }
           />
-          {apptsLoading ? (
-            <CardBody className="space-y-2">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </CardBody>
-          ) : !upcoming.length && !recent.length ? (
+          <Loaded
+            load={apptsLoad}
+            what="this patient’s appointments"
+            skeleton={
+              <CardBody className="space-y-2">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </CardBody>
+            }
+          >
+          {!upcoming.length && !recent.length ? (
             <EmptyState
               icon={<CalendarDays className="h-6 w-6" />}
               title="No appointments yet"
@@ -131,6 +137,7 @@ export function OverviewTab({ patient, onGoTab }: { patient: Doc; onGoTab: (tab:
               </div>
             </CardBody>
           )}
+          </Loaded>
         </Card>
       </div>
 
@@ -158,16 +165,14 @@ export function OverviewTab({ patient, onGoTab }: { patient: Doc; onGoTab: (tab:
         <Card>
           <CardHeader
             title="Financial Summary"
-            subtitle={invLoading ? 'Loading…' : `${fin.count} invoice${fin.count === 1 ? '' : 's'}`}
+            subtitle={invData ? `${fin.count} invoice${fin.count === 1 ? '' : 's'}` : invLoad.failed ? undefined : 'Loading…'}
             actions={
               <Button size="sm" variant="ghost" onClick={() => onGoTab('invoices')}>
                 <Receipt className="h-4 w-4" /> View
               </Button>
             }
           />
-          {invLoading ? (
-            <CardBody><Skeleton className="h-20 w-full" /></CardBody>
-          ) : (
+          <Loaded load={invLoad} what="this patient’s invoices" skeleton={<CardBody><Skeleton className="h-20 w-full" /></CardBody>}>
             <CardBody className="grid grid-cols-3 gap-2">
               <div className="rounded-lg bg-slate-50 px-2.5 py-2.5 text-center">
                 <div className="text-[15px] font-bold text-slate-900">{fmtINR(fin.total)}</div>
@@ -182,7 +187,7 @@ export function OverviewTab({ patient, onGoTab }: { patient: Doc; onGoTab: (tab:
                 <div className={cn('text-[10px] font-medium uppercase tracking-wide', fin.balance > 0 ? 'text-red-500/80' : 'text-slate-400')}>Balance</div>
               </div>
             </CardBody>
-          )}
+          </Loaded>
         </Card>
       </div>
     </div>

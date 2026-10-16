@@ -45,7 +45,7 @@ export function RecordsTab({
   const [form, setForm] = useState<RecordForm>(emptyForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const { data, isLoading } = useList(resource, { patientId: patientCode, sort: 'date', order: 'desc', limit: 200 })
+  const { data, load } = useList(resource, { patientId: patientCode, sort: 'date', order: 'desc', limit: 200 })
   const { data: masters } = useList('treatment_masters', { limit: 100 }, { enabled: dialogOpen })
   const create = useCreate(resource, { successMessage: `${singular} added` })
   const update = useUpdate(resource, { successMessage: `${singular} updated` })
@@ -130,7 +130,8 @@ export function RecordsTab({
       <DataTable
         rows={rows}
         rowKey={(r) => r.id}
-        loading={isLoading}
+        load={load}
+        what={`this patient’s ${plural.toLowerCase()}`}
         onRowClick={openEdit}
         empty={
           <EmptyState

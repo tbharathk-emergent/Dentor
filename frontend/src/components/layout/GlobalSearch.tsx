@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, FileText, Loader2, Search, User, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { loadState } from '@/lib/hooks'
+import { LoadError } from '@/components/ui/bits'
 
 interface SearchResult {
   type: 'patient' | 'appointment' | 'invoice'
@@ -22,12 +24,14 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { data, isFetching } = useQuery<{ results: SearchResult[] }>({
+  const search = useQuery<{ results: SearchResult[] }>({
     queryKey: ['global-search', q],
     queryFn: () => api.get(`/api/search?q=${encodeURIComponent(q)}`),
     enabled: open && q.trim().length >= 2,
     placeholderData: (prev) => prev,
   })
+  const { data, isFetching } = search
+  const load = loadState(search)
   const results = q.trim().length >= 2 ? (data?.results ?? []) : []
 
   useEffect(() => {
@@ -79,6 +83,8 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             <p className="px-3 py-6 text-center text-[13px] text-slate-400">
               Type at least 2 characters — search by name, ID, phone or treatment.
             </p>
+          ) : load.failed ? (
+            <LoadError compact what="the search results" load={load} className="m-1.5" />
           ) : results.length === 0 && !isFetching ? (
             <p className="px-3 py-6 text-center text-[13px] text-slate-400">No matches for “{q}”.</p>
           ) : (

@@ -7,7 +7,16 @@ relative to today to keep the dashboard and calendars alive.
 from datetime import date, timedelta
 
 from .auth import hash_password
-from .config import ADMIN_DEFAULT_PASSWORD, ADMIN_EMAIL
+from .config import (
+    ADMIN_DEFAULT_PASSWORD,
+    ADMIN_EMAIL,
+    CONSULTANT_DEFAULT_PASSWORD,
+    CONSULTANT_EMAIL,
+    DEMO_PATIENT_MOBILE,
+    DEMO_PATIENT_PASSWORD,
+    OWNER_DEFAULT_PASSWORD,
+    OWNER_EMAIL,
+)
 from .util import now_iso
 
 
@@ -33,6 +42,10 @@ async def ensure_seed(db):
     await seed_staff(db)
     await seed_frs(db)
     await seed_settings(db)
+    await seed_patient_clinical(db)
+    await seed_app_logins(db)
+    await seed_labs(db)
+    await seed_recall_templates(db)
 
 
 async def seed_reference(db, settings: dict | None = None):
@@ -515,7 +528,7 @@ async def seed_settings(db, overrides: dict | None = None):
             "consentRequired": True,
             "allergyAlert": True,
             "smartQueue": True,
-            "onlineBooking": False,
+            "onlineBooking": True,
             "doubleBooking": False,
             "twoFactor": False,
             "sessionTimeout": True,
@@ -537,3 +550,152 @@ async def seed_settings(db, overrides: dict | None = None):
         }, "updated_at": now_iso()}},
         upsert=True,
     )
+
+
+# A 1x1 PNG, so the demo patient has a report to open without shipping a real image.
+_SAMPLE_PNG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+async def seed_patient_clinical(db):
+    """Clinical history for the demo patients, so the patient and consultant apps open with content."""
+    if await _empty(db, "prescriptions"):
+        await db.prescriptions.insert_many([
+            {"code": "RX-0901", "patient": "Ravi Kumar", "patientCode": "DEN-1001", "age": 36, "gender": "Male",
+             "allergy": "Penicillin", "date": d(-7), "doctor": "Dr. Kumar", "complaint": "Pain in lower right molar",
+             "diagnosis": "Irreversible pulpitis · 46", "note": "Root canal treatment started.",
+             "meds": [
+                 {"drug": "Azithromycin 500mg", "dose": "1 tablet", "freq": "OD", "days": "3", "unit": "Days", "instruction": "After food"},
+                 {"drug": "Zerodol SP", "dose": "1 tablet", "freq": "BD", "days": "5", "unit": "Days", "instruction": "After food"},
+                 {"drug": "Pan 40", "dose": "1 tablet", "freq": "OD", "days": "5", "unit": "Days", "instruction": "Before food"},
+             ],
+             "advice": "Avoid chewing on the right side. Warm saline rinses twice a day.",
+             "followUp": d(7), "status": "Signed", **_meta()},
+            {"code": "RX-0902", "patient": "Anjali Devi", "patientCode": "DEN-1003", "age": 29, "gender": "Female",
+             "allergy": "", "date": d(-3), "doctor": "Dr. Kumar", "complaint": "Soreness after wire adjustment",
+             "diagnosis": "Orthodontic adjustment discomfort", "note": "",
+             "meds": [{"drug": "Ketorol DT", "dose": "1 tablet", "freq": "SOS", "days": "3", "unit": "Days", "instruction": "After food"}],
+             "advice": "Use orthodontic wax over the bracket if it rubs.", "followUp": d(27), "status": "Signed", **_meta()},
+        ])
+    if await _empty(db, "patient_treatments"):
+        await db.patient_treatments.insert_many([
+            {"patientId": "DEN-1001", "name": "Root Canal Treatment", "tooth": "46", "doctor": "Dr. Kumar",
+             "date": d(-7), "status": "In Progress", "cost": 6500, "notes": "Second sitting due.", **_meta()},
+            {"patientId": "DEN-1001", "name": "Scaling & Polishing", "tooth": "Full mouth", "doctor": "Dr. Anitha",
+             "date": d(-35), "status": "Completed", "cost": 1500, "notes": "", **_meta()},
+            {"patientId": "DEN-1001", "name": "Zirconia Crown", "tooth": "46", "doctor": "Dr. Kumar",
+             "date": d(14), "status": "Planned", "cost": 8500, "notes": "After root canal completion.", **_meta()},
+            {"patientId": "DEN-1003", "name": "Orthodontic Treatment", "tooth": "Both arches", "doctor": "Dr. Kumar",
+             "date": d(-120), "status": "In Progress", "cost": 45000, "notes": "Monthly adjustments.", **_meta()},
+        ])
+    if await _empty(db, "patient_procedures"):
+        await db.patient_procedures.insert_many([
+            {"patientId": "DEN-1001", "name": "Access opening & BMP", "tooth": "46", "doctor": "Dr. Kumar",
+             "date": d(-7), "status": "Completed", "cost": 0, "notes": "Working length determined.", **_meta()},
+            {"patientId": "DEN-1001", "name": "IOPA X-ray", "tooth": "46", "doctor": "Dr. Kumar",
+             "date": d(-7), "status": "Completed", "cost": 300, "notes": "", **_meta()},
+        ])
+    if await _empty(db, "patient_consents"):
+        await db.patient_consents.insert_many([
+            {"patientId": "DEN-1001", "title": "General Treatment Consent", "date": d(-35), "status": "Signed",
+             "notes": "Signed at registration.", **_meta()},
+            {"patientId": "DEN-1001", "title": "Anaesthesia Consent", "date": d(0), "status": "Pending",
+             "notes": "Required before the next root canal sitting.", **_meta()},
+            {"patientId": "DEN-1003", "title": "Orthodontic Consent", "date": d(-120), "status": "Signed", "notes": "", **_meta()},
+        ])
+    if await _empty(db, "patient_timeline"):
+        await db.patient_timeline.insert_many([
+            {"patientId": "DEN-1001", "period": "previous", "name": "Scaling & Polishing", "date": d(-35), "tooth": "Full mouth",
+             "doctor": "Dr. Anitha", "status": "Completed", "price": 1500, "duration": "45 min", "notes": "", **_meta()},
+            {"patientId": "DEN-1001", "period": "present", "name": "Root Canal Treatment", "date": d(-7), "tooth": "46",
+             "doctor": "Dr. Kumar", "status": "In Progress", "price": 6500, "duration": "60 min", "notes": "", **_meta()},
+            {"patientId": "DEN-1001", "period": "upcoming", "name": "Zirconia Crown", "date": d(14), "tooth": "46",
+             "doctor": "Dr. Kumar", "status": "Planned", "price": 8500, "duration": "45 min", "notes": "", **_meta()},
+        ])
+    if await _empty(db, "charts"):
+        await db.charts.insert_one({
+            "patientId": "DEN-1001", "type": "dental",
+            "teeth": {"46": {"condition": "Root Canal", "note": "RCT in progress"},
+                      "16": {"condition": "Filled", "note": "Composite"},
+                      "38": {"condition": "Missing", "note": "Extracted 2023"}},
+            **_meta(),
+        })
+    if await _empty(db, "patient_files"):
+        await db.patient_files.insert_one({
+            "patientId": "DEN-1001", "name": "IOPA 46 (sample)", "category": "X-ray", "size": 95,
+            "dataUrl": _SAMPLE_PNG, **_meta(),
+        })
+
+
+async def seed_app_logins(db):
+    """Demo logins for the Clinic Owner, Consultant and Patient apps (demo clinic only)."""
+    raw = db._db  # emails and patient accounts are unique across the whole platform
+    if not await raw.users.find_one({"email": OWNER_EMAIL}):
+        await db.users.insert_one({
+            "name": "Dr. Pathy", "email": OWNER_EMAIL, "role": "Clinic Owner", "department": "Management",
+            "password_hash": hash_password(OWNER_DEFAULT_PASSWORD), "status": "Active", **_meta(),
+        })
+    consultant = await db.consultants.find_one({"code": "DOC-101"})
+    if consultant and not await raw.users.find_one({"email": CONSULTANT_EMAIL}):
+        await db.users.insert_one({
+            "name": consultant.get("name", "Dr. Kumar"), "email": CONSULTANT_EMAIL, "role": "Consultant",
+            "department": "Clinical", "consultant_id": str(consultant["_id"]),
+            "password_hash": hash_password(CONSULTANT_DEFAULT_PASSWORD), "status": "Active", **_meta(),
+        })
+    patient = await db.patients.find_one({"mobile": DEMO_PATIENT_MOBILE})
+    if patient and not await raw.patient_accounts.find_one({"mobile": DEMO_PATIENT_MOBILE}):
+        await raw.patient_accounts.insert_one({
+            "mobile": DEMO_PATIENT_MOBILE, "name": patient.get("name", "Demo Patient"),
+            "password_hash": hash_password(DEMO_PATIENT_PASSWORD), "status": "Active", **_meta(),
+        })
+
+
+
+async def seed_labs(db):
+    """Demo labs for the Clinic app's lab directory (fictional names)."""
+    if not await _empty(db, "labs"):
+        return
+    m = _meta()
+    await db.labs.insert_many([
+        {"name": "Smile Dental Lab", "type": "Dental", "rating": 4.5, "city": "Trichy", "phone": "0431-2400100", "turnaround_days": 6,
+         "about": "Advanced digital dental lab: CAD/CAM crowns, bridges and implant work.", "services": ["Zirconia crowns", "E-max", "Implant crowns", "Dentures"], "status": "Active", **m},
+        {"name": "ZIREX Dental Lab", "type": "Dental", "rating": 4.3, "city": "Trichy", "phone": "0431-2400200", "turnaround_days": 7,
+         "about": "Zirconia and PFM restorations.", "services": ["Zirconia", "PFM", "Bridges"], "status": "Active", **m},
+        {"name": "CityCare Diagnostics", "type": "Blood", "rating": 4.4, "city": "Trichy", "phone": "0431-2400300", "turnaround_days": 1,
+         "about": "Blood tests with home sample collection.", "services": ["CBC", "Blood Sugar", "HbA1c", "Lipid Profile"], "status": "Active", **m},
+        {"name": "ClearView X-ray Centre", "type": "X-ray", "rating": 4.2, "city": "Trichy", "phone": "0431-2400400", "turnaround_days": 1,
+         "about": "Digital IOPA, OPG and cephalometric X-rays.", "services": ["IOPA", "OPG", "Lateral Ceph"], "status": "Active", **m},
+        {"name": "3D Scan CBCT Centre", "type": "CBCT", "rating": 4.6, "city": "Trichy", "phone": "0431-2400500", "turnaround_days": 2,
+         "about": "Low-dose CBCT with radiologist reports.", "services": ["Small FOV", "Medium FOV", "Full maxillofacial"], "status": "Active", **m},
+    ])
+
+
+async def seed_recall_templates(db):
+    """The design's recall templates (dentor.fig "Message Templates" 152)."""
+    if await db.omni_templates.count_documents({"category": "Recall"}):
+        return
+    m = _meta()
+    await db.omni_templates.insert_many([
+        {"code": "TPL-R1", "name": "Routine Hygiene Recall", "category": "Recall", "channel": "App", "status": "Approved",
+         "text": "Hi [Patient Name], it's been 6 months since your last cleaning at [Clinic Name]. Book your check-up today.", **m},
+        {"code": "TPL-R2", "name": "Post-Surgical Care", "category": "Recall", "channel": "App", "status": "Approved",
+         "text": "Hello [Patient Name], checking in after your procedure. Please follow the post-care instructions and call us if needed.", **m},
+        {"code": "TPL-R3", "name": "Treatment Follow-up", "category": "Recall", "channel": "App", "status": "Approved",
+         "text": "Dear [Patient Name], your next sitting at [Clinic Name] is due. Please book a convenient time.", **m},
+    ])
+
+
+async def seed_products(db):
+    """Demo catalogue for the Dentor store (global, fictional brand names). `db` is the plain database."""
+    if await db.products.count_documents({}):
+        return
+    m = _meta()
+    await db.products.insert_many([
+        {"name": "Rotary Endo Files (Assorted)", "category": "Endodontics", "brand": "DentPro", "price": 2500, "mrp": 2950, "description": "Heat-treated NiTi files, 25 mm, assorted sizes.", "status": "Active", **m},
+        {"name": "Composite Restorative Kit", "category": "Restorative", "brand": "SmileFill", "price": 3200, "mrp": 3800, "description": "Nano-hybrid composite, 6 shades with bonding agent.", "status": "Active", **m},
+        {"name": "Impression Material (Alginate) 450 g", "category": "Prosthodontics", "brand": "ImpressaCare", "price": 650, "mrp": 780, "description": "Dust-free, fast set, mint flavour.", "status": "Active", **m},
+        {"name": "Disposable Prophy Angles (100)", "category": "Preventive", "brand": "CleanCare", "price": 1400, "mrp": 1650, "description": "Latex-free cups, soft webbed.", "status": "Active", **m},
+        {"name": "Orthodontic Brackets Kit (MBT 0.022)", "category": "Orthodontics", "brand": "AlignMate", "price": 1800, "mrp": 2200, "description": "Metal brackets, 5-5 upper and lower, with hooks on 3-4-5.", "status": "Active", **m},
+        {"name": "Autoclave Pouches (200)", "category": "Sterilisation", "brand": "SteriSeal", "price": 900, "mrp": 1100, "description": "Self-seal pouches with process indicators.", "status": "Active", **m},
+    ])

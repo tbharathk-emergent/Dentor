@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn'
 
 export function InvoicesTab({ patientCode }: { patientCode: string }) {
   const navigate = useNavigate()
-  const { data, isLoading } = useList('invoices', { patientCode, sort: 'date', order: 'desc', limit: 200 })
+  const { data, load } = useList('invoices', { patientCode, sort: 'date', order: 'desc', limit: 200 })
   const invoices = data?.items ?? []
   const totals = invoices.reduce(
     (acc, i) => ({ total: acc.total + Number(i.total ?? 0), paid: acc.paid + Number(i.paid ?? 0), balance: acc.balance + Number(i.balance ?? 0) }),
@@ -31,7 +31,8 @@ export function InvoicesTab({ patientCode }: { patientCode: string }) {
       <DataTable
         rows={invoices}
         rowKey={(r) => r.id}
-        loading={isLoading}
+        load={load}
+        what="this patient’s invoices"
         onRowClick={() => navigate('/accounts')}
         empty={
           <EmptyState

@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ApiError } from '@/lib/api'
 import { useDelete, useItem, type Doc, useSettings } from '@/lib/hooks'
 import { Badge } from '@/components/ui/Badge'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -19,7 +20,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Tabs } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, Skeleton } from '@/components/ui/bits'
+import { Avatar, EmptyState, LoadError, Skeleton } from '@/components/ui/bits'
 import { PatientFormDialog } from './Patients'
 import { OverviewTab } from '@/components/patient/OverviewTab'
 import { RecordsTab } from '@/components/patient/RecordsTab'
@@ -27,6 +28,7 @@ import { DentalChartTab } from '@/components/patient/DentalChartTab'
 import { FilesTab } from '@/components/patient/FilesTab'
 import { InvoicesTab } from '@/components/patient/InvoicesTab'
 import { ConsentsTab } from '@/components/patient/ConsentsTab'
+import { CaseSheetDialog, VirtualCardDialog } from '@/components/patient/CaseSheet'
 import { TimelineTab } from '@/components/patient/TimelineTab'
 
 const TABS = [
@@ -46,9 +48,11 @@ export default function PatientProfile() {
   const [tab, setTab] = useState('overview')
   const [editOpen, setEditOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [cardOpen, setCardOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const { data: patient, isLoading, isError } = useItem<Doc>('patients', id)
+  const { data: patient, isLoading, error, load } = useItem<Doc>('patients', id)
   const remove = useDelete('patients', { successMessage: 'Patient deleted' })
   const { data: settings } = useSettings()
 
@@ -71,7 +75,16 @@ export default function PatientProfile() {
     )
   }
 
-  if (isError || !patient) {
+  // Only the API's "no such patient" means the record is gone; any other failure is a failed load.
+  if (load.failed && !(error instanceof ApiError && error.status === 404)) {
+    return (
+      <Card>
+        <LoadError what="this patient" load={load} />
+      </Card>
+    )
+  }
+
+  if (!patient) {
     return (
       <Card>
         <EmptyState
@@ -142,7 +155,8 @@ export default function PatientProfile() {
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setEditOpen(true)}>
               <Pencil className="h-4 w-4" /> Edit
             </Button>
-            <Button size="sm" className="flex-1 sm:flex-none" onClick={() => navigate('/appointments?new=1')}>
+            {/* Twice the share of "Edit", and one line: on a phone the label used to wrap out of the button. */}
+            <Button size="sm" className="flex-[2] whitespace-nowrap sm:flex-none" onClick={() => navigate('/appointments?new=1')}>
               <CalendarPlus className="h-4 w-4" /> Book Appointment
             </Button>
             <div className="relative">
@@ -153,6 +167,20 @@ export default function PatientProfile() {
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-pop">
+                    <button
+                      onClick={() => { setMenuOpen(false); setSheetOpen(true) }}
+                      data-testid="open-case-sheet"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <Copy className="h-4 w-4 text-slate-400" /> Case sheet
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpen(false); setCardOpen(true) }}
+                      data-testid="open-virtual-card"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <Copy className="h-4 w-4 text-slate-400" /> Virtual card
+                    </button>
                     <button
                       onClick={copyId}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-50"
@@ -173,6 +201,8 @@ export default function PatientProfile() {
         </div>
       </Card>
 
+      <CaseSheetDialog patient={patient} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <VirtualCardDialog patient={patient} open={cardOpen} onClose={() => setCardOpen(false)} />
       <Tabs tabs={TABS} value={tab} onChange={setTab} className="mb-4" />
 
       {tab === 'overview' && <OverviewTab patient={patient} onGoTab={setTab} />}

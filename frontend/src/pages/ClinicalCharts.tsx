@@ -14,14 +14,14 @@ import {
   Stethoscope,
   Trash2,
 } from 'lucide-react'
-import { fmtDate, todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
+import { fmtDate, loadState, todayISO, useCreate, useList, useUpdate, type Doc } from '@/lib/hooks'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, ListSkeleton, Loaded, PageHeader, StatCard } from '@/components/ui/bits'
 import { PatientPicker } from '@/components/clinical/PatientPicker'
 import { cn } from '@/lib/cn'
 
@@ -237,7 +237,9 @@ export default function ClinicalCharts() {
     else create.mutate(payload as Partial<Doc>, { onSuccess: done })
   }
 
-  const chartsLoading = !!pid && (tab === 'perio' ? perioQ.isLoading : orthoQ.isLoading)
+  // A chart that could not be loaded is not shown as a blank one: saving that would replace what is on record.
+  const chartLoad = loadState(tab === 'perio' ? perioQ : orthoQ)
+  const chartReady = !chartLoad.loading && !chartLoad.failed
   const lastSaved =
     tab === 'perio'
       ? savedAt.perio ?? perioDoc?.updated_at
@@ -249,7 +251,7 @@ export default function ClinicalCharts() {
         title="Clinical Charts"
         subtitle="Periodontal and orthodontic charting, assessment and treatment monitoring"
         actions={
-          patient && (
+          patient && chartReady && (
             <div className="flex items-center gap-3">
               {lastSaved && <span className="hidden text-xs text-slate-400 sm:block">Last saved · {fmtWhen(lastSaved)}</span>}
               <Button
@@ -316,19 +318,21 @@ export default function ClinicalCharts() {
             message="Search and select a patient above to begin periodontal or orthodontic charting."
           />
         </Card>
-      ) : chartsLoading ? (
-        <ListSkeleton rows={6} />
-      ) : tab === 'perio' ? (
-        <PerioSection data={perio} onChange={setPerio} />
       ) : (
-        <OrthoSection
-          data={ortho}
-          onChange={setOrtho}
-          onPersist={(next, msg) => {
-            setOrtho(next)
-            persist('ortho', next, msg)
-          }}
-        />
+        <Loaded load={chartLoad} what={tab === 'perio' ? 'the periodontal chart' : 'the orthodontic chart'} card skeleton={<ListSkeleton rows={6} />}>
+          {tab === 'perio' ? (
+            <PerioSection data={perio} onChange={setPerio} />
+          ) : (
+            <OrthoSection
+              data={ortho}
+              onChange={setOrtho}
+              onPersist={(next, msg) => {
+                setOrtho(next)
+                persist('ortho', next, msg)
+              }}
+            />
+          )}
+        </Loaded>
       )}
     </div>
   )

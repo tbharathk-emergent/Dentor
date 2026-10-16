@@ -1,19 +1,25 @@
 @import 'tailwindcss';
 
 @theme {
+  /* The CMS Figma design (docs/design/cms.fig): Inter for text, Manrope for headings and the header. */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Manrope', 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Brand — calm clinical teal */
-  --color-brand-50: #f0fdfa;
-  --color-brand-100: #ccfbf1;
-  --color-brand-200: #99f6e4;
-  --color-brand-300: #5eead4;
-  --color-brand-400: #2dd4bf;
-  --color-brand-500: #14b8a6;
-  --color-brand-600: #0d9488;
-  --color-brand-700: #0f766e;
-  --color-brand-800: #115e59;
-  --color-brand-900: #134e4a;
+  /* Brand — the CMS design's teal. 500 (header band and sidebar), 700 (buttons, active items)
+     and 100 (light fills) are the design's own; the other shades are derived between them. */
+  --color-brand-50: #eaf7fa;
+  --color-brand-100: #b9e7f3;
+  --color-brand-200: #8fd6ea;
+  --color-brand-300: #57c0db;
+  --color-brand-400: #23a8c4;
+  --color-brand-500: #0092ab;
+  --color-brand-600: #117d92;
+  --color-brand-700: #146575;
+  --color-brand-800: #10525f;
+  --color-brand-900: #0c3f49;
+
+  /* The design's gold, for figures on the teal band */
+  --color-gold-400: #f9ca0b;
 
   /* Ink — deep navy used for headings / brand marks */
   --color-ink-900: #0b1f33;
@@ -98,5 +104,21 @@ input[type='number'] {
 @media print {
   .no-print {
     display: none !important;
+  }
+}
+
+/* Printing one part of the page (the case sheet, the virtual card): everything else is hidden. */
+@media print {
+  body.printing * {
+    visibility: hidden !important;
+  }
+  body.printing .print-area,
+  body.printing .print-area * {
+    visibility: visible !important;
+  }
+  body.printing .print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
   }
 }

@@ -1,0 +1,23 @@
+{
+  "name": "dentor-mobile",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "routes": "npm run routes --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.mjs\"",
+    "build:web": "npm run build:web --workspaces --if-present",
+    "e2e:patient": "node e2e/patient.e2e.mjs",
+    "e2e:consultant": "node e2e/consultant.e2e.mjs",
+    "e2e:owner": "node e2e/owner.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.0"
+  },
+  "engines": {
+    "node": ">= 22.11.0"
+  }
+}

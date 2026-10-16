@@ -1,10 +1,12 @@
-import { lazy, Suspense, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Component, lazy, Suspense, type ReactNode } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { TriangleAlert, WifiOff } from 'lucide-react'
 import { useAuth } from './lib/auth'
 import { getActiveClinic } from './lib/api'
 import AppShell from './components/layout/AppShell'
 import Login from './pages/Login'
-import { ListSkeleton } from './components/ui/bits'
+import { Button } from './components/ui/Button'
+import { EmptyState, ListSkeleton } from './components/ui/bits'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Patients = lazy(() => import('./pages/Patients'))
@@ -18,6 +20,7 @@ const Prescriptions = lazy(() => import('./pages/Prescriptions'))
 const Pharmacy = lazy(() => import('./pages/Pharmacy'))
 const Lab = lazy(() => import('./pages/Lab'))
 const Accounts = lazy(() => import('./pages/Accounts'))
+const Expenses = lazy(() => import('./pages/Expenses'))
 const Inventory = lazy(() => import('./pages/Inventory'))
 const Staff = lazy(() => import('./pages/Staff'))
 const Certificates = lazy(() => import('./pages/Certificates'))
@@ -29,6 +32,58 @@ const Masters = lazy(() => import('./pages/Masters'))
 const Settings = lazy(() => import('./pages/Settings'))
 const ScheduleNotes = lazy(() => import('./pages/ScheduleNotes'))
 const Platform = lazy(() => import('./pages/Platform'))
+
+type PageFailure = 'download' | 'error' | null
+
+/**
+ * A page's code is downloaded the first time the page is opened. If that download fails (no
+ * connection, or a new release has replaced the file) React would otherwise unmount the whole app
+ * and leave a blank screen. This keeps the rest of the app on screen and says what happened.
+ */
+class PageBoundary extends Component<{ at: string; children: ReactNode }, { failure: PageFailure; at: string }> {
+  state: { failure: PageFailure; at: string } = { failure: null, at: this.props.at }
+
+  static getDerivedStateFromError(error: unknown) {
+    const download = /dynamically imported module|module script failed|Failed to fetch|Load failed/i.test(String(error))
+    return { failure: (download ? 'download' : 'error') as PageFailure }
+  }
+
+  // Opening another page is a fresh start.
+  static getDerivedStateFromProps(props: { at: string }, state: { at: string }) {
+    return props.at === state.at ? null : { failure: null, at: props.at }
+  }
+
+  render() {
+    const { failure } = this.state
+    if (!failure) return this.props.children
+    return (
+      <EmptyState
+        icon={failure === 'download' ? <WifiOff className="h-6 w-6" /> : <TriangleAlert className="h-6 w-6" />}
+        title={failure === 'download' ? 'This page could not be loaded' : 'Something went wrong on this page'}
+        message={
+          failure === 'download'
+            ? 'Check your internet connection, then try again.'
+            : 'Try again. If it keeps happening, tell your administrator.'
+        }
+        action={
+          <Button size="sm" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        }
+      />
+    )
+  }
+}
+
+/** One page: its loading state, and its failure state kept inside the app. */
+function Page({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation()
+  return (
+    <PageBoundary at={pathname}>
+      <Suspense fallback={<ListSkeleton rows={6} />}>{children}</Suspense>
+    </PageBoundary>
+  )
+}
 
 function Protected({ children }: { children: ReactNode }) {
   const { isAuthenticated, isSuperAdmin } = useAuth()
@@ -53,9 +108,9 @@ export default function App() {
         path="/platform"
         element={
           <SuperAdminOnly>
-            <Suspense fallback={<ListSkeleton rows={6} />}>
+            <Page>
               <Platform />
-            </Suspense>
+            </Page>
           </SuperAdminOnly>
         }
       />
@@ -69,9 +124,9 @@ export default function App() {
         <Route
           path="/"
           element={
-            <Suspense fallback={<ListSkeleton rows={6} />}>
+            <Page>
               <Dashboard />
-            </Suspense>
+            </Page>
           }
         />
         {(
@@ -87,6 +142,7 @@ export default function App() {
             ['/pharmacy', Pharmacy],
             ['/lab', Lab],
             ['/accounts', Accounts],
+            ['/expenses', Expenses],
             ['/inventory', Inventory],
             ['/staff', Staff],
             ['/certificates', Certificates],
@@ -103,9 +159,9 @@ export default function App() {
             key={path}
             path={path}
             element={
-              <Suspense fallback={<ListSkeleton rows={6} />}>
+              <Page>
                 <Comp />
-              </Suspense>
+              </Page>
             }
           />
         ))}

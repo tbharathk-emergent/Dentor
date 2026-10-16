@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useList, type Doc } from '@/lib/hooks'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Field'
-import { Avatar } from '@/components/ui/bits'
+import { Avatar, LoadError } from '@/components/ui/bits'
 
 /** Search-as-you-type patient selector used by Rx compose and the pharmacy POS. */
 export function PatientPicker({
@@ -19,7 +19,7 @@ export function PatientPicker({
 }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const { data } = useList('patients', { q: query, limit: 8 })
+  const { data, load } = useList('patients', { q: query, limit: 8 })
 
   if (value) {
     return (
@@ -69,6 +69,7 @@ export function PatientPicker({
           ))}
         </div>
       )}
+      {load.failed && <LoadError compact what="the patient search" load={load} className="mt-2" />}
     </div>
   )
 }

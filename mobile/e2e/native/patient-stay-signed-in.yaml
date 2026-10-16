@@ -1,0 +1,64 @@
+# Helper for patient-reinstall.yaml: signs the demo patient in and stops, leaving the session
+# in the Keychain. Debug builds only (it stops on a release build before typing the password).
+appId: in.dentor.patient
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: "welcome-continue"
+- tapOn:
+    id: "welcome-continue"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding"
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn:
+    id: "onboarding-login"
+# The design's disclaimer: tick "I understand", then Agree.
+- assertVisible:
+    id: "disclaimer"
+- tapOn:
+    id: "disclaimer-understand"
+- tapOn:
+    id: "disclaimer-agree"
+- assertVisible:
+    id: "login-screen"
+- scrollUntilVisible:
+    element:
+      id: "dev-build"
+- scrollUntilVisible:
+    element:
+      id: "login-mobile"
+    direction: UP
+- tapOn:
+    id: "login-mobile"
+- inputText: "9876543210"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Email or Mobile Number"
+- tapOn:
+    id: "login-password"
+- inputText: "Patient@2026"
+# Tapping a plain label closes the keyboard the way a person would. (Maestro's own
+# hideKeyboard swipes from the middle of the screen, which on a tablet presses whatever is there.)
+- tapOn: "Email or Mobile Number"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+# Prove the session is really stored: it survives a restart.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 120000

@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..auth import get_current_user
+from ..roles import has_role, require_staff
 from ..tenancy import TenantDB, get_tenant
 from ..util import next_sequence, now_iso, serialize, text_filter, to_object_id
 
@@ -16,14 +16,27 @@ def crud_router(
     search_fields: list[str],
     *,
     validate=None,  # async (tdb, payload, existing_doc | None) -> None; may mutate payload
+    after_write=None,  # async (tdb, action, doc, before | None) -> None; notifications etc.
     code_field: Optional[str] = None,
     code_prefix: str = "",
     code_start: int = 1,
     default_sort: str = "created_at",
     default_order: int = -1,
     tag: Optional[str] = None,
+    read_roles: Optional[set[str]] = None,  # None: any clinic staff
+    write_roles: Optional[set[str]] = None,  # None: same as read_roles
+    validate_user=None,  # async (tdb, user, payload, existing_doc | None) -> None: per-user rules
 ) -> APIRouter:
+    """`read_roles` / `write_roles` narrow who may read and change the collection. The collections
+    the reception web app has always used keep the default (any clinic staff) so that the live web
+    app behaves as before; the collections added for the designed apps name their roles."""
     router = APIRouter(prefix=f"/api/{name}", tags=[tag or name])
+    write_roles = write_roles if write_roles is not None else read_roles
+    label = name.replace("_", " ")
+
+    def check(user: dict, roles: Optional[set[str]], verb: str) -> None:
+        if roles is not None and not has_role(user, roles):
+            raise HTTPException(status_code=403, detail=f"Your role cannot {verb} {label}.")
 
     @router.get("")
     async def list_items(
@@ -33,9 +46,10 @@ def crud_router(
         order: Optional[str] = None,
         limit: int = 500,
         skip: int = 0,
-        user: dict = Depends(get_current_user),
+        user: dict = Depends(require_staff),
         tdb: TenantDB = Depends(get_tenant),
     ):
+        check(user, read_roles, "see")
         col = tdb[name]
         query = text_filter(q, search_fields)
         for key, value in request.query_params.items():
@@ -50,7 +64,8 @@ def crud_router(
         return {"items": serialize(items), "total": total}
 
     @router.get("/{item_id}")
-    async def get_item(item_id: str, user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+    async def get_item(item_id: str, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
+        check(user, read_roles, "see")
         col = tdb[name]
         doc = await col.find_one({"_id": to_object_id(item_id)})
         if not doc:
@@ -58,10 +73,13 @@ def crud_router(
         return serialize(doc)
 
     @router.post("", status_code=201)
-    async def create_item(payload: dict, user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+    async def create_item(payload: dict, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
+        check(user, write_roles, "add to")
         col = tdb[name]
         for key in ("id", "_id", "clinic_id"):
             payload.pop(key, None)
+        if validate_user:
+            await validate_user(tdb, user, payload, None)
         if validate:
             await validate(tdb, payload, None)
         payload["created_at"] = now_iso()
@@ -71,27 +89,37 @@ def crud_router(
             payload[code_field] = await next_sequence(tdb, name, code_prefix, code_start)
         result = await col.insert_one(payload)
         doc = await col.find_one({"_id": result.inserted_id})
+        if after_write:
+            await after_write(tdb, "create", doc, None)
         return serialize(doc)
 
     @router.patch("/{item_id}")
-    async def update_item(item_id: str, payload: dict, user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+    async def update_item(item_id: str, payload: dict, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
+        check(user, write_roles, "change")
         col = tdb[name]
-        for key in ("id", "_id", "clinic_id"):
+        for key in ("id", "_id", "clinic_id", "created_at", "created_by"):
             payload.pop(key, None)
-        if validate:
+        existing = None
+        if validate or after_write or validate_user:
             existing = await col.find_one({"_id": to_object_id(item_id)})
             if not existing:
                 raise HTTPException(status_code=404, detail="Record not found")
+        if validate_user:
+            await validate_user(tdb, user, payload, existing)
+        if validate:
             await validate(tdb, payload, existing)
         payload["updated_at"] = now_iso()
         result = await col.update_one({"_id": to_object_id(item_id)}, {"$set": payload})
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Record not found")
         doc = await col.find_one({"_id": to_object_id(item_id)})
+        if after_write:
+            await after_write(tdb, "update", doc, existing)
         return serialize(doc)
 
     @router.delete("/{item_id}")
-    async def delete_item(item_id: str, user: dict = Depends(get_current_user), tdb: TenantDB = Depends(get_tenant)):
+    async def delete_item(item_id: str, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
+        check(user, write_roles, "remove")
         col = tdb[name]
         result = await col.delete_one({"_id": to_object_id(item_id)})
         if result.deleted_count == 0:

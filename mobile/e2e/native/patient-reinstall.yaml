@@ -1,0 +1,19 @@
+# iOS only: deleting and reinstalling the app must not bring back the previous person's session.
+# iOS keeps Keychain items of a deleted app; the app clears them on its first launch after install.
+#
+# This file is the second half. Run it like this (debug build, Metro running, development API):
+#   maestro test e2e/native/patient.yaml                # signs in and out, leaves the app installed
+#   maestro test e2e/native/patient-stay-signed-in.yaml # signs in and stops, still signed in
+#   xcrun simctl uninstall booted in.dentor.patient
+#   xcrun simctl install booted <path to DentorPatient.app>
+#   maestro test e2e/native/patient-reinstall.yaml
+appId: in.dentor.patient
+---
+- launchApp
+# A fresh install starts from the beginning: the permissions list and onboarding, not the home screen and not the login screen.
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- assertNotVisible:
+    id: "home-screen"

@@ -15,7 +15,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { EmptyState, Figures, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { PatientPicker } from '@/components/rx/PatientPicker'
 import { billReceiptHTML, openPrintWindow } from '@/components/rx/print'
 
@@ -395,20 +395,21 @@ export default function Pharmacy() {
       />
 
       {/* KPIs */}
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5 sm:gap-3">
+      {/* On the Bills tab the stock list is not on screen, so its failure is reported with the figures. */}
+      <Figures load={itemsQ.load} what={tab === 'bills' ? 'the stock figures' : undefined} className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5 sm:gap-3">
         <StatCard label="Total items" value={kpis.total} icon={<Boxes className="h-5 w-5" />} onClick={() => { setTab('stock'); setFilter('') }} />
         <StatCard label="In stock" value={kpis.inStock} icon={<Pill className="h-5 w-5" />} accent="green" onClick={() => { setTab('stock'); setFilter('') }} />
         <StatCard label="Low stock" value={kpis.low} icon={<AlertTriangle className="h-5 w-5" />} accent="amber" onClick={() => { setTab('stock'); setFilter('low') }} />
         <StatCard label="Out of stock" value={kpis.out} icon={<PackageX className="h-5 w-5" />} accent="red" onClick={() => { setTab('stock'); setFilter('out') }} />
         <StatCard label="Stock value" value={fmtINR(kpis.value)} icon={<IndianRupee className="h-5 w-5" />} accent="blue" className="col-span-2 sm:col-span-1" />
-      </div>
+      </Figures>
 
       <Tabs
         className="mb-4"
         value={tab}
         onChange={(k) => setTab(k as typeof tab)}
         tabs={[
-          { key: 'stock', label: 'Stock', count: kpis.total },
+          { key: 'stock', label: 'Stock', count: itemsQ.data && kpis.total },
           { key: 'dispense', label: 'Dispense', count: cart.length || undefined },
           { key: 'bills', label: 'Bills', count: billsQ.data?.total },
         ]}
@@ -429,7 +430,8 @@ export default function Pharmacy() {
             rows={filteredStock}
             columns={stockColumns}
             rowKey={(r) => r.id}
-            loading={itemsQ.isLoading}
+            load={itemsQ.load}
+            what="the pharmacy stock"
             onRowClick={(r) => { setEditing(r); setItemOpen(true) }}
             empty={
               <EmptyState
@@ -477,9 +479,8 @@ export default function Pharmacy() {
             <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
               <SearchInput value={posQ} onChange={setPosQ} placeholder="Search medicine to add…" className="sm:max-w-sm" />
             </div>
-            {itemsQ.isLoading ? (
-              <ListSkeleton rows={6} />
-            ) : !posItems.length ? (
+            <Loaded load={itemsQ.load} what="the pharmacy stock" skeleton={<ListSkeleton rows={6} />}>
+            {!posItems.length ? (
               <EmptyState icon={<Pill className="h-6 w-6" />} title="No medicines found" message="Try a different search, or add items in the Stock tab." />
             ) : (
               <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -513,6 +514,7 @@ export default function Pharmacy() {
                 })}
               </div>
             )}
+            </Loaded>
           </Card>
 
           {/* Cart */}
@@ -603,7 +605,8 @@ export default function Pharmacy() {
             rows={bills}
             columns={billColumns}
             rowKey={(r) => r.id}
-            loading={billsQ.isLoading}
+            load={billsQ.load}
+            what="the pharmacy bills"
             onRowClick={(r) => setViewBill(r)}
             empty={
               <EmptyState

@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarPlus, MapPin, Pencil, Star, Stethoscope, Trash2, UserPlus } from 'lucide-react'
@@ -8,7 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput } from '@/components/ui/bits'
+import { Avatar, EmptyState, ListSkeleton, Loaded, PageHeader, SearchInput } from '@/components/ui/bits'
 
 const SPECIALTIES = [
   'General & Restorative Dentistry',
@@ -163,12 +165,12 @@ function ConsultantProfileDialog({
   const navigate = useNavigate()
   const open = !!consultant
 
-  const { data: bookingData } = useList(
+  const { data: bookingData, load: bookingsLoad } = useList(
     'consultant_bookings',
     { consultant: consultant?.name, sort: 'date', order: 'asc', limit: 100 },
     { enabled: open },
   )
-  const { data: apptData } = useList(
+  const { data: apptData, load: apptsLoad } = useList(
     'appointments',
     { doctor: consultant?.name, sort: 'date', order: 'asc', limit: 100 },
     { enabled: open },
@@ -235,6 +237,7 @@ function ConsultantProfileDialog({
 
         <div>
           <h4 className="mb-2 text-[13px] font-semibold text-slate-800">Upcoming Consultant Bookings</h4>
+          <Loaded load={bookingsLoad} what="the consultant bookings" skeleton={<ListSkeleton rows={2} />}>
           {!upcomingBookings.length ? (
             <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-[13px] text-slate-500">No upcoming consultant bookings.</p>
           ) : (
@@ -254,10 +257,12 @@ function ConsultantProfileDialog({
               ))}
             </ul>
           )}
+          </Loaded>
         </div>
 
         <div>
           <h4 className="mb-2 text-[13px] font-semibold text-slate-800">Upcoming Appointments</h4>
+          <Loaded load={apptsLoad} what="the appointments" skeleton={<ListSkeleton rows={2} />}>
           {!upcomingAppts.length ? (
             <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-[13px] text-slate-500">No upcoming appointments assigned.</p>
           ) : (
@@ -277,6 +282,7 @@ function ConsultantProfileDialog({
               ))}
             </ul>
           )}
+          </Loaded>
         </div>
       </div>
     </Dialog>
@@ -291,7 +297,12 @@ export default function Consultants() {
   const [profile, setProfile] = useState<Doc | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null)
 
-  const { data, isLoading } = useList('consultants', { q, sort: 'code', order: 'asc', limit: 200 })
+  const { data, load } = useList('consultants', { q, sort: 'code', order: 'asc', limit: 200 })
+  // this month's load per doctor (cms.fig "cms / consultant" 383:1566); a role without access simply sees no figures
+  const analytics = useQuery<{ items: { id: string; appointments: number; hours: number; completion_rate: number | null }[] }>({
+    queryKey: ['clinic-app', 'analytics', 'consultants'], queryFn: () => api.get('/api/clinic-app/analytics/consultants'), retry: false,
+  })
+  const stats = Object.fromEntries((analytics.data?.items ?? []).map((x) => [x.id, x]))
   const all = data?.items ?? []
 
   const consultants = useMemo(
@@ -327,9 +338,10 @@ export default function Consultants() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: 'All', label: 'All', count: counts.All },
-          { key: 'In-house', label: 'In-house', count: counts['In-house'] },
-          { key: 'Visiting', label: 'Visiting', count: counts.Visiting },
+          // No count without the list: a "0" would say there are none.
+          { key: 'All', label: 'All', count: data && counts.All },
+          { key: 'In-house', label: 'In-house', count: data && counts['In-house'] },
+          { key: 'Visiting', label: 'Visiting', count: data && counts.Visiting },
         ]}
       />
 
@@ -342,9 +354,8 @@ export default function Consultants() {
         />
       </div>
 
-      {isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : !consultants.length ? (
+      <Loaded load={load} what="the consultants" card skeleton={<ListSkeleton rows={4} />}>
+      {!consultants.length ? (
         <Card>
           <EmptyState
             icon={<Stethoscope className="h-6 w-6" />}
@@ -392,6 +403,13 @@ export default function Consultants() {
                   <div className="truncate text-[13px] font-semibold text-slate-800">{fmtINR(c.fee)}</div>
                 </div>
               </div>
+              {stats[c.id] && (
+                <div className="mt-2 grid grid-cols-3 gap-1 text-center" data-testid={`consultant-stats-${c.code}`}>
+                  <div className="rounded-md bg-brand-50 px-1 py-1"><div className="text-[10px] uppercase text-slate-400">Load</div><div className="text-xs font-semibold">{stats[c.id].appointments} appts</div></div>
+                  <div className="rounded-md bg-brand-50 px-1 py-1"><div className="text-[10px] uppercase text-slate-400">Hours</div><div className="text-xs font-semibold">{stats[c.id].hours}</div></div>
+                  <div className="rounded-md bg-brand-50 px-1 py-1"><div className="text-[10px] uppercase text-slate-400">Completion</div><div className="text-xs font-semibold">{stats[c.id].completion_rate === null ? '—' : `${stats[c.id].completion_rate}%`}</div></div>
+                </div>
+              )}
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1 text-xs text-slate-500">
                   <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -422,6 +440,7 @@ export default function Consultants() {
           ))}
         </div>
       )}
+      </Loaded>
 
       <ConsultantFormDialog
         open={formOpen}

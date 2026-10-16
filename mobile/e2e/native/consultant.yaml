@@ -1,0 +1,145 @@
+# Native smoke test for the Consultant app (Android emulator or iOS simulator).
+# Needs the debug app installed, Metro running, and the API on a development database:
+#   maestro test e2e/native/consultant.yaml
+appId: in.dentor.consultant
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+# First launch: the permissions list, the onboarding screen and the disclaimer, then the login.
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: consultant-00-permissions
+- scrollUntilVisible:
+    element:
+      id: "welcome-continue"
+- tapOn:
+    id: "welcome-continue"
+- assertVisible:
+    id: "welcome-onboarding"
+- scrollUntilVisible:
+    element:
+      id: "welcome-login"
+- takeScreenshot: consultant-00-onboarding
+- tapOn:
+    id: "welcome-login"
+- assertVisible:
+    id: "welcome-disclaimer"
+- tapOn:
+    id: "welcome-agree"
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 120000
+- waitForAnimationToEnd
+
+# Debug builds only. A release build talks to the production API and shows no such note:
+# the flow stops here, before any password is typed.
+- assertVisible:
+    id: "dev-build"
+
+# A front-desk login is not a consultant account.
+- tapOn:
+    id: "login-email"
+- inputText: "admin@dentor.in"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-password"
+- inputText: "Dentor@2026"
+# Tapping a plain label closes the keyboard the way a person would. (Maestro's own
+# hideKeyboard swipes from the middle of the screen, which on a tablet presses whatever is there.)
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "This login is not a consultant account."
+
+# Dr. Kumar signs in and lands on Today.
+- tapOn:
+    id: "login-email"
+- eraseText: 30
+- inputText: "kumar@dentor.in"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-password"
+- eraseText: 30
+- inputText: "Consultant@2026"
+- tapOn: "Welcome"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "screen-today"
+    timeout: 30000
+- takeScreenshot: consultant-01-today
+
+# Every tab opens its screen.
+- tapOn:
+    id: "tab-schedule"
+- assertVisible:
+    id: "screen-schedule"
+- takeScreenshot: consultant-02-schedule
+- tapOn:
+    id: "tab-earnings"
+- assertVisible:
+    id: "screen-earnings"
+- tapOn:
+    id: "tab-patients"
+- assertVisible:
+    id: "screen-patients"
+
+# A patient record (a screen with a path parameter), its prescription form, and back twice.
+- tapOn:
+    id: "patient-DEN-1001"
+- extendedWaitUntil:
+    visible:
+      id: "screen-patient"
+    timeout: 15000
+- assertVisible: "Ravi Kumar"
+- takeScreenshot: consultant-03-patient
+- tapOn:
+    id: "segment-treatments"
+- takeScreenshot: consultant-04-treatments
+- tapOn:
+    id: "back"
+- assertVisible:
+    id: "screen-patients"
+
+# The session survives a restart, then sign out returns to the login screen.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "screen-today"
+    timeout: 120000
+- tapOn:
+    id: "tab-profile"
+- assertVisible:
+    id: "screen-profile"
+# The design's Settings screen (dentor.fig 426), pushed from Profile, and back again.
+- scrollUntilVisible:
+    element:
+      id: "open-settings"
+- tapOn:
+    id: "open-settings"
+- assertVisible:
+    id: "settings-screen"
+- tapOn:
+    id: "back"
+- assertVisible:
+    id: "screen-profile"
+- scrollUntilVisible:
+    element:
+      id: "sign-out"
+- tapOn:
+    id: "sign-out"
+- tapOn:
+    id: "confirm-yes"
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 15000

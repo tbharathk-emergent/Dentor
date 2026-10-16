@@ -1,0 +1,11 @@
+{
+  "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "lib": ["DOM", "ESNext"],
+    "types": ["react-native"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "index.web.tsx", "../../packages/shared/src/assets.d.ts"]
+}

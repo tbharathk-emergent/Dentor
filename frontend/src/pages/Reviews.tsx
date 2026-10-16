@@ -12,7 +12,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
 import { DataTable, type Column } from '@/components/ui/DataTable'
-import { Avatar, EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, ListSkeleton, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { downloadCSV } from '@/components/growth/csv'
 
 const CHANNELS = ['Google', 'WhatsApp', 'DENTOR App', 'Facebook']
@@ -37,7 +37,7 @@ function ReviewStatusBadge({ status }: { status: string }) {
 
 export default function Reviews() {
   const qc = useQueryClient()
-  const { data, isLoading } = useList('reviews', { limit: 500, sort: 'created_at', order: 'desc' })
+  const { data, load } = useList('reviews', { limit: 500, sort: 'created_at', order: 'desc' })
   const reviews = data?.items ?? []
 
   const [scope, setScope] = useState('All')
@@ -257,12 +257,14 @@ export default function Reviews() {
         title="Reviews & Ratings"
         subtitle="Moderate clinic and consultant feedback, protect quality and publish approved experiences"
         actions={
-          <Button variant="outline" onClick={exportCSV}>
+          <Button variant="outline" onClick={exportCSV} disabled={!data}>
             <Download className="h-4 w-4" /> Export
           </Button>
         }
       />
 
+      {/* The figures, the table and both summaries come from the one list: without it none of them is shown. */}
+      <Loaded load={load} what="the reviews" card skeleton={<ListSkeleton rows={6} />}>
       {/* KPI cards — clickable status filters */}
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
         <StatCard label="Total reviews" hint="All feedback channels" value={kpis.total} icon={<MessageSquareQuote className="h-5 w-5" />} onClick={() => setStatus('')} />
@@ -284,7 +286,8 @@ export default function Reviews() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchInput value={q} onChange={setQ} placeholder="Search reviewer, clinic, consultant or review…" className="min-w-0 flex-1 sm:max-w-xs" />
+        {/* min-w-40: on a phone the filters wrap below instead of squeezing the search box */}
+        <SearchInput value={q} onChange={setQ} placeholder="Search reviewer, clinic, consultant or review…" className="min-w-40 flex-1 sm:max-w-xs" />
         <Select value={rating} onChange={(e) => setRating(e.target.value)} className="w-32">
           <option value="">All Ratings</option>
           {[5, 4, 3, 2, 1].map((n) => (
@@ -326,7 +329,6 @@ export default function Reviews() {
             rows={filtered}
             columns={columns}
             rowKey={(r) => r.id}
-            loading={isLoading}
             onRowClick={(r) => setDetail(r)}
             empty={
               <EmptyState
@@ -402,6 +404,7 @@ export default function Reviews() {
           </Card>
         </div>
       </div>
+      </Loaded>
 
       {/* Moderation confirm dialog */}
       <Dialog

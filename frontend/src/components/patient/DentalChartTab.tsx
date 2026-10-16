@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, Textarea } from '@/components/ui/Field'
-import { Skeleton } from '@/components/ui/bits'
+import { LoadError, Skeleton } from '@/components/ui/bits'
 import { cn } from '@/lib/cn'
 
 export const TOOTH_CONDITIONS = [
@@ -42,7 +42,7 @@ export function DentalChartTab({ patientCode }: { patientCode: string }) {
   const [condition, setCondition] = useState<ToothCondition>('Healthy')
   const [note, setNote] = useState('')
 
-  const { data, isLoading } = useList('charts', { patientId: patientCode, type: 'dental', limit: 1 })
+  const { data, isLoading, load } = useList('charts', { patientId: patientCode, type: 'dental', limit: 1 })
   const chart: Doc | undefined = data?.items?.[0]
   const teeth: Record<string, ToothState> = useMemo(() => chart?.teeth ?? {}, [chart])
 
@@ -111,6 +111,15 @@ export function DentalChartTab({ patientCode }: { patientCode: string }) {
         {cond === 'Missing' ? <span className="text-sm leading-none">✕</span> : n}
         {state?.note && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-brand-600 ring-2 ring-white" />}
       </button>
+    )
+  }
+
+  // A chart that could not be loaded is not shown as an all-healthy one, and cannot be saved over.
+  if (load.failed) {
+    return (
+      <Card>
+        <LoadError what="this patient’s dental chart" load={load} />
+      </Card>
     )
   }
 

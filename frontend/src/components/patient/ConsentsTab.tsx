@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
-import { EmptyState, ListSkeleton } from '@/components/ui/bits'
+import { EmptyState, ListSkeleton, Loaded } from '@/components/ui/bits'
 
 const CONSENT_TITLES = [
   'General Treatment Consent',
@@ -34,7 +34,7 @@ export function ConsentsTab({ patientCode }: { patientCode: string }) {
   const [form, setForm] = useState<ConsentForm>(emptyForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const { data, isLoading } = useList('patient_consents', { patientId: patientCode, sort: 'date', order: 'desc', limit: 200 })
+  const { data, load } = useList('patient_consents', { patientId: patientCode, sort: 'date', order: 'desc', limit: 200 })
   const create = useCreate('patient_consents', { successMessage: 'Consent recorded' })
   const update = useUpdate('patient_consents', { successMessage: 'Consent updated' })
   const remove = useDelete('patient_consents', { successMessage: 'Consent deleted' })
@@ -79,9 +79,8 @@ export function ConsentsTab({ patientCode }: { patientCode: string }) {
           </Button>
         }
       />
-      {isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : !consents.length ? (
+      <Loaded load={load} what="this patient’s consent forms" skeleton={<ListSkeleton rows={4} />}>
+      {!consents.length ? (
         <EmptyState
           icon={<FileSignature className="h-6 w-6" />}
           title="No consent forms saved"
@@ -120,6 +119,7 @@ export function ConsentsTab({ patientCode }: { patientCode: string }) {
           ))}
         </ul>
       )}
+      </Loaded>
 
       <Dialog
         open={dialogOpen}

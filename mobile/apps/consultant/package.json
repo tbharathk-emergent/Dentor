@@ -1,0 +1,52 @@
+{
+  "name": "@dentor/consultant-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "routes": "node ../../scripts/gen-routes.mjs .",
+    "typecheck": "node ../../scripts/gen-routes.mjs . --check && tsc --noEmit",
+    "web": "vite --port 8092",
+    "build:web": "vite build",
+    "preview:web": "vite preview --port 8092"
+  },
+  "dependencies": {
+    "@dentor/shared": "*",
+    "@react-native-documents/picker": "^12.0.2",
+    "@react-native-vector-icons/feather": "^13.1.5",
+    "@react-native-vector-icons/material-design-icons": "^13.1.5",
+    "@react-navigation/bottom-tabs": "^7.5.0",
+    "@react-navigation/native": "^7.5.0",
+    "@react-navigation/native-stack": "^7.5.0",
+    "@tanstack/react-query": "^5.104.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.87.1",
+    "react-native-image-picker": "^8.2.1",
+    "react-native-keychain": "^10.0.0",
+    "react-native-safe-area-context": "^5.5.2",
+    "react-native-screens": "^4.29.0",
+    "react-native-web": "^0.21.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.2.0",
+    "@react-native-community/cli-platform-android": "20.2.0",
+    "@react-native-community/cli-platform-ios": "20.2.0",
+    "@react-native/babel-preset": "0.87.1",
+    "@react-native/metro-config": "0.87.1",
+    "@react-native/typescript-config": "0.87.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.0"
+  },
+  "engines": {
+    "node": ">= 22.11.0"
+  }
+}

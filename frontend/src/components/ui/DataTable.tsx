@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
-import { EmptyState, ListSkeleton } from './bits'
+import type { LoadState } from '@/lib/hooks'
+import { EmptyState, ListSkeleton, LoadError } from './bits'
 
 export interface Column<T> {
   key: string
@@ -14,13 +15,18 @@ export interface Column<T> {
 /**
  * Responsive data display: a real table on >=md screens,
  * card list on small screens (rendered via `mobileCard`).
+ *
+ * `load` is the state of the request the rows come from: the table shows its own skeleton and its
+ * own "could not load" message, and `empty` only when the request succeeded with nothing in it.
+ * Leave it out only where a parent `Loaded` already made sure of that.
  */
 export function DataTable<T>({
   rows,
   columns,
   rowKey,
   onRowClick,
-  loading,
+  load,
+  what = 'this list',
   empty,
   mobileCard,
   footer,
@@ -29,17 +35,22 @@ export function DataTable<T>({
   columns: Column<T>[]
   rowKey: (row: T) => string
   onRowClick?: (row: T) => void
-  loading?: boolean
+  load?: LoadState
+  /** Completes "Could not load …". */
+  what?: string
   empty?: ReactNode
   mobileCard: (row: T) => ReactNode
   footer?: ReactNode
 }) {
-  if (loading) return <ListSkeleton rows={6} />
+  if (load?.failed) return <LoadError what={what} load={load} />
+  if (load?.loading) return <ListSkeleton rows={6} />
+  const stale = load?.stale ? <LoadError compact what={what} load={load} className="m-3" /> : null
   if (!rows.length)
-    return <>{empty ?? <EmptyState title="Nothing here yet" message="Records you add will appear here." />}</>
+    return <>{stale}{empty ?? <EmptyState title="Nothing here yet" message="Records you add will appear here." />}</>
 
   return (
     <>
+      {stale}
       {/* Mobile cards */}
       <ul className="divide-y divide-slate-100 md:hidden">
         {rows.map((row) => (

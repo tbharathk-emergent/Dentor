@@ -21,14 +21,14 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { fmtINR, fmtTime, todayISO, useUpdate } from '@/lib/hooks'
+import { fmtINR, fmtTime, loadState, todayISO, useUpdate } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Dialog } from '@/components/ui/Dialog'
 import { Field, Input } from '@/components/ui/Field'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Avatar, EmptyState, Skeleton, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, Loaded, Skeleton, StatCard } from '@/components/ui/bits'
 
 interface DashboardData {
   financialLock?: boolean
@@ -67,11 +67,13 @@ export default function Dashboard() {
   const [showMoney, setShowMoney] = useState(() => sessionStorage.getItem('dentor.money') === '1')
   const [unlockOpen, setUnlockOpen] = useState(false)
 
-  const { data, isLoading, refetch } = useQuery<DashboardData>({
+  const dashboard = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: () => api.get(`/api/dashboard?date=${todayISO()}`),
     refetchInterval: 60_000,
   })
+  const { data, refetch } = dashboard
+  const load = loadState(dashboard)
 
   const { data: ad } = useQuery<Record<string, string>>({
     queryKey: ['advertisement'],
@@ -191,14 +193,20 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* KPI grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-[76px]" />
-          ))}
-        </div>
-      ) : (
+      {/* Everything below is today's data: none of it is shown as zero or "nothing today" unless the API said so. */}
+      <Loaded
+        load={load}
+        what="today’s figures"
+        card
+        skeleton={
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-[76px]" />
+            ))}
+          </div>
+        }
+      >
+        {/* KPI grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
           <StatCard label="Appointments today" value={data?.appointmentsToday ?? 0} icon={<CalendarDays className="h-5 w-5" />} accent="brand" onClick={() => navigate('/appointments')} />
           <StatCard label="Waiting now" value={data?.byStatus?.Waiting ?? 0} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => navigate('/appointments?status=Waiting')} />
@@ -209,7 +217,6 @@ export default function Dashboard() {
           <StatCard label="Pharmacy low stock" value={data?.pharmacyLowStock ?? 0} hint={`${data?.pharmacyAvailable ?? 0} in stock`} icon={<Pill className="h-5 w-5" />} accent="amber" onClick={() => navigate('/pharmacy?filter=low')} />
           <StatCard label="FRS opportunities" value={data?.frs ?? 0} icon={<ClipboardList className="h-5 w-5" />} accent="brand" onClick={() => navigate('/frs')} />
         </div>
-      )}
 
       {/* Main grid */}
       <div className="grid gap-4 lg:grid-cols-3 sm:gap-5">
@@ -249,7 +256,10 @@ export default function Dashboard() {
                       {a.treatment} · {a.doctor} · {a.chair}
                     </div>
                   </div>
-                  <StatusBadge status={a.status} className="hidden sm:inline-flex" />
+                  {/* Wrapper carries the breakpoint: the badge's own inline-flex would override `hidden`. */}
+                  <span className="hidden sm:inline-flex">
+                    <StatusBadge status={a.status} />
+                  </span>
                   {a.status === 'Scheduled' && (
                     <Button size="sm" variant="secondary" onClick={() => checkIn(a.id)}>
                       Check in
@@ -319,6 +329,7 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+      </Loaded>
     </div>
   )
 }

@@ -8,10 +8,12 @@ import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, ListSkeleton, PageHeader, SearchInput } from '@/components/ui/bits'
+import { EmptyState, Loaded, PageHeader, SearchInput } from '@/components/ui/bits'
+import { TreatmentFees } from '@/components/masters/TreatmentFees'
 
 const MODULES: { key: string; label: string; types: string[] }[] = [
   { key: 'clinical', label: 'Clinical', types: ['Treatments', 'Procedures', 'Diagnosis', 'Clinical Findings'] },
+  { key: 'fees', label: 'Treatment fees', types: [] },
   { key: 'patients', label: 'Patients', types: ['Patient Types', 'Referral Sources', 'Medical Conditions', 'Allergies', 'Relationship Types'] },
   { key: 'appointments', label: 'Appointments', types: ['Appointment Types', 'Appointment Status', 'Chairs', 'Clinical Rooms', 'Cancellation Reasons'] },
   { key: 'finance', label: 'Finance', types: ['Service Price List', 'Tax Rates', 'Payment Modes', 'Discount Reasons', 'Cost Centres'] },
@@ -31,7 +33,7 @@ export default function Masters() {
   const [deleteTarget, setDeleteTarget] = useState<Doc | null>(null)
 
   const mod = MODULES.find((m) => m.key === module)!
-  const { data, isLoading } = useList('masters', { module, q, ...(type ? { type } : {}), sort: 'sort', order: 'asc', limit: 500 })
+  const { data, load } = useList('masters', { module, q, ...(type ? { type } : {}), sort: 'sort', order: 'asc', limit: 500 })
   const rows = data?.items ?? []
 
   const update = useUpdate('masters')
@@ -65,6 +67,8 @@ export default function Masters() {
 
       <Tabs className="mb-4" value={module} onChange={setModule} tabs={MODULES.map((m) => ({ key: m.key, label: m.label }))} />
 
+      {module === 'fees' ? <TreatmentFees /> : (
+      <>
       <div className="mb-3 flex flex-wrap gap-2">
         <SearchInput value={q} onChange={setQ} placeholder={`Search ${mod.label.toLowerCase()} masters…`} className="min-w-0 flex-1 sm:max-w-sm" />
         <Select value={type} onChange={(e) => setType(e.target.value)} className="w-52">
@@ -74,9 +78,8 @@ export default function Masters() {
       </div>
 
       <Card>
-        {isLoading ? (
-          <ListSkeleton rows={5} />
-        ) : !rows.length ? (
+        <Loaded load={load} what="the master records">
+        {!rows.length ? (
           <EmptyState icon={<Database className="h-6 w-6" />} title="No master records" message="Add reference values for this module." action={<Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus className="h-4 w-4" /> Add Master</Button>} />
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -101,7 +104,10 @@ export default function Masters() {
             ))}
           </ul>
         )}
+        </Loaded>
       </Card>
+      </>
+      )}
 
       <MasterDialog
         open={formOpen}

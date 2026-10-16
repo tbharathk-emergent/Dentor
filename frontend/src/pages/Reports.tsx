@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { format, subDays } from 'date-fns'
 import { BarChart3, Download, FileBarChart, Play, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fmtDate, fmtINR, todayISO, useCreate, useDelete, useList, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, loadState, todayISO, useCreate, useDelete, useList, type Doc } from '@/lib/hooks'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, PageHeader, StatCard } from '@/components/ui/bits'
+import { EmptyState, ListSkeleton, Loaded, PageHeader, StatCard } from '@/components/ui/bits'
 import { cn } from '@/lib/cn'
 
 const SOURCES: Record<string, { resource: string; label: string; fields: { key: string; label: string; money?: boolean; date?: boolean }[] }> = {
@@ -85,10 +85,16 @@ export default function Reports() {
   const [to, setTo] = useState(todayISO())
 
   // Pull the raw data once; aggregate client-side (demo-scale data).
-  const { data: invoices } = useList('invoices', { limit: 1000 })
-  const { data: payments } = useList('payments', { limit: 1000 })
-  const { data: appointments } = useList('appointments', { limit: 1000 })
-  const { data: patients } = useList('patients', { limit: 1000 })
+  const invoiceList = useList('invoices', { limit: 1000 })
+  const paymentList = useList('payments', { limit: 1000 })
+  const appointmentList = useList('appointments', { limit: 1000 })
+  const patientList = useList('patients', { limit: 1000 })
+  const invoices = invoiceList.data
+  const payments = paymentList.data
+  const appointments = appointmentList.data
+  const patients = patientList.data
+  // Every total and chart below is added up from these four lists; a missing one would read as ₹0.
+  const load = loadState(invoiceList, paymentList, appointmentList, patientList)
 
   const inRange = (d: string | undefined) => !!d && d >= from && d <= to
 
@@ -142,12 +148,12 @@ export default function Reports() {
       />
 
       {tab !== 'custom' && (
+        <Loaded load={load} what="the report data" card skeleton={<ListSkeleton rows={6} />}>
         <div className="mb-4 flex flex-wrap items-end gap-2">
           <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <span className="pb-2.5 text-xs text-slate-400">{stats.inv.length} invoices · {stats.pay.length} payments · {stats.appt.length} appointments in range</span>
         </div>
-      )}
 
       {tab === 'overview' && (
         <div className="space-y-4">
@@ -306,6 +312,8 @@ export default function Reports() {
           </Card>
         </div>
       )}
+        </Loaded>
+      )}
 
       {tab === 'custom' && <CustomReports />}
     </div>
@@ -319,8 +327,8 @@ function CustomReports() {
   const [running, setRunning] = useState(false)
 
   const def = SOURCES[source]
-  const { data: saved } = useList('saved_reports', { limit: 100 })
-  const { data: rows } = useList(def.resource, { limit: 1000 }, { enabled: running })
+  const { data: saved, load: savedLoad } = useList('saved_reports', { limit: 100 })
+  const { data: rows, load: rowsLoad } = useList(def.resource, { limit: 1000 }, { enabled: running })
   const create = useCreate('saved_reports', { successMessage: 'Report saved' })
   const remove = useDelete('saved_reports', { successMessage: 'Saved report deleted' })
 
@@ -397,6 +405,7 @@ function CustomReports() {
 
         <Card>
           <CardHeader title="Saved Reports" />
+          <Loaded load={savedLoad} what="the saved reports" skeleton={<ListSkeleton rows={2} />}>
           {!saved?.items?.length ? (
             <CardBody className="py-5 text-center text-[13px] text-slate-400">Saved reports appear here.</CardBody>
           ) : (
@@ -414,18 +423,20 @@ function CustomReports() {
               ))}
             </ul>
           )}
+          </Loaded>
         </Card>
       </div>
 
       <Card>
         <CardHeader
           title={name || 'Report Preview'}
-          subtitle={running ? `${rows?.items?.length ?? 0} rows · ${def.label}` : 'Choose fields and press Run'}
+          subtitle={running ? (rows ? `${rows.items.length} rows · ${def.label}` : def.label) : 'Choose fields and press Run'}
           actions={<Button size="sm" variant="outline" onClick={exportCsv}><Download className="h-4 w-4" /> Export CSV</Button>}
         />
         {!running ? (
           <EmptyState icon={<FileBarChart className="h-6 w-6" />} title="No report run yet" message="Pick a source and fields on the left, then press Run." />
         ) : (
+          <Loaded load={rowsLoad} what="the report" skeleton={<ListSkeleton rows={6} />}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -448,6 +459,7 @@ function CustomReports() {
               </tbody>
             </table>
           </div>
+          </Loaded>
         )}
       </Card>
     </div>

@@ -19,7 +19,14 @@ import asyncio
 import sys
 
 from .auth import hash_password, verify_password
-from .config import ADMIN_DEFAULT_PASSWORD, ADMIN_EMAIL, IS_PROD
+from .config import (
+    ADMIN_DEFAULT_PASSWORD,
+    ADMIN_EMAIL,
+    CONSULTANT_EMAIL,
+    DEMO_PATIENT_MOBILE,
+    IS_PROD,
+    OWNER_EMAIL,
+)
 from .db import db
 from .main import RESOURCES
 from .migrate import ensure_tenancy
@@ -85,6 +92,15 @@ async def run(assume_yes: bool, admin_password: str | None) -> int:
         if result.matched_count != 1:
             print("ERROR: demo clinic admin not found after seeding — aborting verification.")
             return 1
+        # The owner, consultant and patient demo logins must not keep their public defaults either.
+        await tdb.users.update_many(
+            {"email": {"$in": [OWNER_EMAIL, CONSULTANT_EMAIL]}},
+            {"$set": {"password_hash": hash_password(admin_password)}},
+        )
+        await db.patient_accounts.update_one(
+            {"mobile": DEMO_PATIENT_MOBILE},
+            {"$set": {"password_hash": hash_password(admin_password)}},
+        )
 
     # ---- report ----
     after = await _counts(demo_id)
@@ -112,6 +128,8 @@ async def run(assume_yes: bool, admin_password: str | None) -> int:
         if verify_password(expected, admin.get("password_hash", "")):
             print(f"OK: clinic admin {ADMIN_EMAIL} (user id 'admin') logs in with the "
                   f"{'provided password' if admin_password else 'documented demo password'}")
+            print(f"OK: demo owner {OWNER_EMAIL}, consultant {CONSULTANT_EMAIL} and patient "
+                  f"{DEMO_PATIENT_MOBILE} use the {'same provided password' if admin_password else 'documented demo passwords'}")
         else:
             ok = False
             print("FAIL: clinic admin password did not verify")

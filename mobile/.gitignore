@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Browser builds
+dist-web/
+
+# Android
+build/
+.gradle/
+.cxx/
+.kotlin/
+local.properties
+*.iml
+*.hprof
+.idea/
+*.keystore
+!debug.keystore
+*.jks
+keystore.properties
+signing/signing.properties
+
+# iOS
+**/Pods/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/
+*.ipa
+*.jsbundle
+**/.xcode.env.local
+/vendor/bundle/
+
+# Tooling
+.DS_Store
+.metro-health-check*
+npm-debug.log

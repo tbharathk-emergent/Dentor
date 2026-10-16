@@ -15,15 +15,16 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { fmtTime, todayISO, useCreate, useList, useSettings, useUpdate, type Doc } from '@/lib/hooks'
-import { StatusBadge } from '@/components/ui/Badge'
+import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { Avatar, EmptyState, Figures, ListSkeleton, LoadError, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { PatientFormDialog } from './Patients'
 import { cn } from '@/lib/cn'
+import { CalendarViews } from '@/components/appointments/CalendarViews'
 
 const DOCTORS = ['Dr. Kumar', 'Dr. Anitha', 'Dr. Gowtham']
 const CHAIRS = ['Chair 01', 'Chair 02', 'Chair 03']
@@ -67,8 +68,8 @@ export function AppointmentDialog({
   const [newPatientOpen, setNewPatientOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const { data: patientData } = useList('patients', { q: patientQuery, limit: 8 }, { enabled: open })
-  const { data: dayAppts } = useList('appointments', { date: form.date, limit: 200 }, { enabled: open })
+  const { data: patientData, load: patientsLoad } = useList('patients', { q: patientQuery, limit: 8 }, { enabled: open })
+  const { data: dayAppts, load: dayLoad } = useList('appointments', { date: form.date, limit: 200 }, { enabled: open })
   const { data: treatments } = useList('treatment_masters', { limit: 100 }, { enabled: open })
   const { data: clinicSettings } = useSettings()
 
@@ -212,6 +213,7 @@ export function AppointmentDialog({
                 </div>
               )}
             </Field>
+            {patientsLoad.failed && !form.patient && <LoadError compact what="the patient search" load={patientsLoad} className="mt-2" />}
           </div>
 
           <Field label="Date" required error={errors.date}>
@@ -257,6 +259,8 @@ export function AppointmentDialog({
               ⚠ {conflict}
             </p>
           )}
+          {/* Without that day's appointments a clash cannot be shown here; the API still refuses a double booking. */}
+          {dayLoad.failed && <LoadError compact what="that day’s other appointments" load={dayLoad} className="sm:col-span-2" />}
           <button type="submit" className="hidden" />
         </form>
       </Dialog>
@@ -276,7 +280,7 @@ export default function Appointments() {
   const [q, setQ] = useState('')
   const [doctor, setDoctor] = useState('')
   const [status, setStatus] = useState(params.get('status') || '')
-  const [view, setView] = useState<'day' | 'list'>('day')
+  const [view, setView] = useState<'day' | 'list' | 'doctors' | 'week' | 'month' | 'rescheduled'>('day')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Doc | null>(null)
   const [slotDefaults, setSlotDefaults] = useState<Partial<ApptForm>>()
@@ -291,7 +295,7 @@ export default function Appointments() {
     }
   }, [params, setParams])
 
-  const { data, isLoading } = useList('appointments', {
+  const { data, load } = useList('appointments', {
     date: view === 'day' ? date : undefined,
     q, ...(doctor ? { doctor } : {}), ...(status ? { status } : {}),
     sort: view === 'day' ? 'time' : 'date', order: view === 'day' ? 'asc' : 'desc',
@@ -301,7 +305,7 @@ export default function Appointments() {
 
   // Week strip counts
   const weekStart = useMemo(() => addDays(new Date(date + 'T00:00'), -3), [date])
-  const { data: weekData } = useList('appointments', { limit: 1000, sort: 'time', order: 'asc' })
+  const { data: weekData, load: weekLoad } = useList('appointments', { limit: 1000, sort: 'time', order: 'asc' })
   const weekCounts = useMemo(() => {
     const map: Record<string, number> = {}
     for (const a of weekData?.items ?? []) map[a.date] = (map[a.date] || 0) + 1
@@ -359,13 +363,13 @@ export default function Appointments() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5 sm:gap-3">
+      <Figures load={weekLoad} what="today’s appointment figures" className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5 sm:gap-3">
         <StatCard label="Today" value={counts.total ?? 0} icon={<CalendarDays className="h-5 w-5" />} onClick={() => { setStatus(''); setDate(todayISO()) }} />
         <StatCard label="Scheduled" value={counts.Scheduled ?? 0} icon={<Clock className="h-5 w-5" />} accent="blue" onClick={() => setStatus('Scheduled')} />
         <StatCard label="Waiting" value={counts.Waiting ?? 0} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => setStatus('Waiting')} />
         <StatCard label="Completed" value={counts.Completed ?? 0} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => setStatus('Completed')} />
         <StatCard label="Cancelled" value={counts.Cancelled ?? 0} icon={<X className="h-5 w-5" />} accent="red" onClick={() => setStatus('Cancelled')} className="col-span-2 sm:col-span-1" />
-      </div>
+      </Figures>
 
       {/* Controls */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -379,7 +383,7 @@ export default function Appointments() {
           </Button>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 flex-1 sm:w-[150px] sm:flex-none" />
         </div>
-        <SearchInput value={q} onChange={setQ} placeholder="Search patient, ID or treatment…" className="min-w-0 flex-1 sm:max-w-xs" />
+        <SearchInput value={q} onChange={setQ} placeholder="Search patient, ID or treatment…" className="min-w-40 flex-1 sm:max-w-xs" />
         <Select value={doctor} onChange={(e) => setDoctor(e.target.value)} className="w-36">
           <option value="">All Dentists</option>
           {DOCTORS.map((d) => <option key={d}>{d}</option>)}
@@ -389,15 +393,15 @@ export default function Appointments() {
           {STATUSES.map((s) => <option key={s}>{s}</option>)}
         </Select>
         <Segmented
-          className="ml-auto"
+          className="w-full flex-wrap sm:ml-auto sm:w-auto"
           value={view}
-          onChange={(v) => setView(v as 'day' | 'list')}
-          options={[{ key: 'day', label: 'Day' }, { key: 'list', label: 'All Upcoming' }]}
+          onChange={(v) => setView(v as typeof view)}
+          options={[{ key: 'day', label: 'Day' }, { key: 'doctors', label: 'By doctor' }, { key: 'week', label: 'Week' }, { key: 'month', label: 'Month' }, { key: 'list', label: 'All Upcoming' }, { key: 'rescheduled', label: 'Rescheduled' }]}
         />
       </div>
 
       {/* Week strip */}
-      {view === 'day' && (
+      {(view === 'day' || view === 'doctors') && (
         <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
           {Array.from({ length: 7 }).map((_, i) => {
             const dt = addDays(weekStart, i)
@@ -416,8 +420,9 @@ export default function Appointments() {
                   {format(dt, 'EEE')}
                 </span>
                 <span className="text-lg font-bold leading-6">{format(dt, 'd')}</span>
+                {/* No count until the appointments are known: "0 appts" would be a claim. */}
                 <span className={cn('text-[10px]', active ? 'text-brand-100' : 'text-slate-400')}>
-                  {weekCounts[iso] || 0} appt{(weekCounts[iso] || 0) === 1 ? '' : 's'}
+                  {weekData ? `${weekCounts[iso] || 0} appt${(weekCounts[iso] || 0) === 1 ? '' : 's'}` : '—'}
                 </span>
               </button>
             )
@@ -426,9 +431,11 @@ export default function Appointments() {
       )}
 
       {/* Content */}
-      {isLoading ? (
-        <ListSkeleton rows={6} />
-      ) : view === 'day' ? (
+      {view === 'week' || view === 'month' || view === 'rescheduled' || view === 'doctors' ? (
+        <CalendarViews view={view} date={date} onOpenDay={(d) => { setDate(d); setView('day') }} />
+      ) : (
+      <Loaded load={load} what="the appointments" card skeleton={<ListSkeleton rows={6} />}>
+      {view === 'day' ? (
         <Card>
           {appts.length === 0 && (
             <EmptyState
@@ -481,9 +488,10 @@ export default function Appointments() {
                         )}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="truncate text-sm font-semibold text-slate-800">{a.patient}</span>
                             <StatusBadge status={a.status} />
+                            {a.source === 'Patient App' && <Badge tone="violet">App booking</Badge>}
                           </div>
                           <div className="truncate text-xs text-slate-500">
                             {a.treatment} · {a.doctor} · {a.chair} · {a.duration}
@@ -515,17 +523,21 @@ export default function Appointments() {
                     <div className="text-xs text-slate-500">{fmtTime(a.time)}</div>
                   </div>
                   <Avatar name={a.patient} className="hidden sm:flex" />
-                  <div className="min-w-0 flex-1">
+                  {/* basis-40: on a phone the badges and actions wrap below instead of squeezing the name out */}
+                  <div className="min-w-0 flex-1 basis-40">
                     <div className="truncate text-sm font-semibold text-slate-800">{a.patient}</div>
                     <div className="truncate text-xs text-slate-500">{a.treatment} · {a.doctor} · {a.chair}</div>
                   </div>
                   <StatusBadge status={a.status} />
+                  {a.source === 'Patient App' && <Badge tone="violet">App booking</Badge>}
                   {apptActions(a)}
                 </li>
               ))}
             </ul>
           )}
         </Card>
+      )}
+      </Loaded>
       )}
 
       <AppointmentDialog

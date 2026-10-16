@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,12 +7,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import CORS_ORIGINS, IS_PROD, SEED_DEMO, validate_production_config
 from .db import db
 from .migrate import ensure_tenancy
-from .routers import billing, misc, platform
+from .hooks import after_appointment, after_consent, after_conversation, after_invoice, after_prescription
+from .routers import (
+    onboarding,
+    billing,
+    clinic_users,
+    engagement,
+    consultant_portal,
+    misc,
+    notifications_router,
+    clinic_accounts,
+    clinic_app,
+    clinic_clinical,
+    owner_portal,
+    patient_portal,
+    platform,
+)
 from .routers.auth_router import router as auth_router
 from .routers.resource import crud_router
 from .rules import validate_appointment, validate_clinical_record, validate_invoice
 from .security import BodySizeLimitMiddleware
-from .seed import ensure_seed
+from .roles import CLINIC_ADMIN_ROLES, FINANCE_ROLES
+from .rules import validate_treatment_master
+from .routers.clinic_accounts import validate_expense
+from .seed import ensure_seed, seed_products
 from .tenancy import TenantDB
 
 
@@ -21,7 +40,13 @@ async def lifespan(app: FastAPI):
     demo_clinic_id = await ensure_tenancy(db, [name for name, _, _ in RESOURCES], create_demo=SEED_DEMO)
     if SEED_DEMO and demo_clinic_id:
         await ensure_seed(TenantDB(db, demo_clinic_id))
+        await seed_products(db)
+    # scheduled offers to patients go out within a minute of their time (routers/engagement.py)
+    stop = asyncio.Event()
+    offers_task = asyncio.create_task(engagement.offer_loop(stop))
     yield
+    stop.set()
+    await offers_task
 
 
 app = FastAPI(
@@ -44,20 +69,31 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(onboarding.router)
 app.include_router(misc.router)
 app.include_router(billing.router)
 app.include_router(platform.router)
+app.include_router(notifications_router.router)
+app.include_router(clinic_users.router)
+# Role-scoped APIs behind the three mobile apps.
+app.include_router(owner_portal.router)
+app.include_router(clinic_app.router)
+app.include_router(clinic_clinical.router)
+app.include_router(clinic_accounts.router)
+app.include_router(engagement.router)
+app.include_router(consultant_portal.router)
+app.include_router(patient_portal.router)
 
 # (resource, search fields, code field config)
 RESOURCES = [
     ("patients", ["name", "code", "mobile", "treatment", "doctor", "email"], dict(code_field="code", code_prefix="DEN-", code_start=1050)),
-    ("appointments", ["patient", "code", "treatment", "doctor", "date", "chair"], dict(code_field="code", code_prefix="APT-", code_start=5001, validate=validate_appointment)),
+    ("appointments", ["patient", "code", "treatment", "doctor", "date", "chair"], dict(code_field="code", code_prefix="APT-", code_start=5001, validate=validate_appointment, after_write=after_appointment)),
     ("consultants", ["name", "code", "specialty", "location"], dict(code_field="code", code_prefix="CON-", code_start=107)),
     ("consultant_bookings", ["patient", "consultant", "code", "reason"], dict(code_field="code", code_prefix="CNS-", code_start=2001)),
-    ("invoices", ["number", "patient", "patientCode", "treatment", "doctor"], dict(code_field="number", code_prefix="CLN-INV-", code_start=2849, validate=validate_invoice)),
+    ("invoices", ["number", "patient", "patientCode", "treatment", "doctor"], dict(code_field="number", code_prefix="CLN-INV-", code_start=2849, validate=validate_invoice, after_write=after_invoice)),
     ("payments", ["receipt", "patient", "invoice", "mode"], {}),
     ("workflow_records", ["patient", "reference", "type", "code"], {}),
-    ("prescriptions", ["patient", "code", "doctor", "diagnosis"], dict(code_field="code", code_prefix="RX-", code_start=1001)),
+    ("prescriptions", ["patient", "code", "doctor", "diagnosis"], dict(code_field="code", code_prefix="RX-", code_start=1001, after_write=after_prescription)),
     ("rx_combos", ["name"], {}),
     ("pharmacy_items", ["name", "code", "category", "batch"], dict(code_field="code", code_prefix="MED-", code_start=1011)),
     ("pharmacy_bills", ["number", "patient"], dict(code_field="number", code_prefix="PH-INV-", code_start=1001)),
@@ -69,12 +105,14 @@ RESOURCES = [
     ("inventory_purchases", ["code", "supplier", "invoice", "item"], dict(code_field="code", code_prefix="PUR-", code_start=3001)),
     ("leads", ["name", "phone", "email", "interest", "source", "code"], dict(code_field="code", code_prefix="LD-", code_start=26098)),
     ("reviews", ["reviewer", "subject", "text", "channel", "code"], dict(code_field="code", code_prefix="RV-", code_start=26056)),
-    ("omni_conversations", ["name", "patientId", "topic", "channel"], {}),
+    ("omni_conversations", ["name", "patientId", "topic", "channel"], dict(after_write=after_conversation)),
     ("omni_templates", ["name", "text", "category"], dict(code_field="code", code_prefix="TPL-", code_start=7)),
     ("omni_campaigns", ["name", "code", "channel"], dict(code_field="code", code_prefix="CMP-", code_start=2610)),
     ("schedule_notes", ["title", "patient", "details", "assigned"], dict(code_field="code", code_prefix="SN-", code_start=1004)),
     ("masters", ["name", "type", "module", "code", "detail"], {}),
-    ("treatment_masters", ["name", "code", "category"], {}),
+    # the clinic's procedures and fees: everyone reads them, the owner and administrators set them
+    ("treatment_masters", ["name", "code", "category"], dict(code_field="code", code_prefix="TRT-", code_start=1001,
+                                                            validate=validate_treatment_master, write_roles=CLINIC_ADMIN_ROLES)),
     ("staff", ["name", "code", "role", "department", "mobile"], dict(code_field="code", code_prefix="EMP-", code_start=108)),
     ("certificates", ["code", "patient", "type", "doctor"], {}),
     ("payslips", ["code", "employee", "period"], {}),
@@ -91,7 +129,12 @@ RESOURCES = [
     ("activities", ["message", "type", "user"], {}),
     ("patient_treatments", ["patientId", "name", "doctor", "status"], dict(validate=validate_clinical_record)),
     ("patient_procedures", ["patientId", "name", "doctor", "status"], dict(validate=validate_clinical_record)),
-    ("patient_consents", ["patientId", "title", "status"], {}),
+    ("patient_consents", ["patientId", "title", "status"], dict(after_write=after_consent)),
+    # the Clinic app's lab directory: every staff login reads it, the owner and administrators keep it
+    ("labs", ["name", "type", "city"], dict(write_roles=CLINIC_ADMIN_ROLES)),
+    # money going out (rent, salaries, supplies…): the owner, administrators and accountants only
+    ("expenses", ["payee", "category", "description", "code"], dict(code_field="code", code_prefix="EXP-", code_start=1001,
+                                                                   validate=validate_expense, read_roles=FINANCE_ROLES, write_roles=FINANCE_ROLES)),
 ]
 
 for name, fields, extra in RESOURCES:

@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useList, type Doc } from '@/lib/hooks'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Field'
-import { Avatar } from '@/components/ui/bits'
+import { Avatar, LoadError } from '@/components/ui/bits'
 
 /** Inline patient search picker used by ops modules (Lab, Inventory issues etc). */
 export function PatientPicker({
@@ -27,7 +27,7 @@ export function PatientPicker({
 }) {
   const [query, setQuery] = useState('')
   const [showList, setShowList] = useState(false)
-  const { data } = useList('patients', { q: query, limit: 8 }, { enabled })
+  const { data, load } = useList('patients', { q: query, limit: 8 }, { enabled })
 
   return (
     <div className="relative">
@@ -72,6 +72,7 @@ export function PatientPicker({
           </div>
         )}
       </Field>
+      {load.failed && !name && <LoadError compact what="the patient search" load={load} className="mt-2" />}
     </div>
   )
 }

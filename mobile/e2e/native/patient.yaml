@@ -1,0 +1,132 @@
+# Native smoke test for the patient app (Android emulator or iOS simulator).
+# Needs the debug app installed, Metro running, and the API on a development database:
+#   maestro test e2e/native/patient.yaml
+appId: in.dentor.patient
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+# First launch: splash, the permissions list, then onboarding, then the login screen.
+- extendedWaitUntil:
+    visible:
+      id: "welcome-permissions"
+    timeout: 120000
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: "welcome-continue"
+- tapOn:
+    id: "welcome-continue"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding"
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: patient-01-onboarding
+- tapOn:
+    id: "onboarding-login"
+# The design's disclaimer: tick "I understand", then Agree.
+- assertVisible:
+    id: "disclaimer"
+- tapOn:
+    id: "disclaimer-understand"
+- tapOn:
+    id: "disclaimer-agree"
+- assertVisible:
+    id: "login-screen"
+
+# Debug builds only. A release build talks to the production API and shows no such note:
+# the flow stops here, before any password is typed.
+- scrollUntilVisible:
+    element:
+      id: "dev-build"
+- scrollUntilVisible:
+    element:
+      id: "login-mobile"
+    direction: UP
+
+# A wrong password is refused.
+- tapOn:
+    id: "login-mobile"
+- inputText: "9876543210"
+# The keyboard covers the password field on a phone: close it first, as a person would.
+- tapOn: "Email or Mobile Number"
+- tapOn:
+    id: "login-password"
+- inputText: "not-the-password"
+# Tapping a plain label closes the keyboard the way a person would. (Maestro's own
+# hideKeyboard swipes from the middle of the screen, which on a tablet presses whatever is there.)
+- tapOn: "Email or Mobile Number"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "Incorrect mobile number or password."
+
+# The demo patient signs in and lands on Home.
+- tapOn:
+    id: "login-password"
+- eraseText: 30
+- inputText: "Patient@2026"
+- tapOn: "Email or Mobile Number"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+- takeScreenshot: patient-02-home
+
+# The design's bottom bar: every icon opens its screen; the SCHEDULER tile opens booking.
+- tapOn:
+    id: "tab-appointments"
+- assertVisible:
+    id: "appointments-screen"
+- takeScreenshot: patient-03-appointments
+- tapOn:
+    id: "tab-records"
+- assertVisible:
+    id: "records-screen"
+- takeScreenshot: patient-04-records
+- tapOn:
+    id: "tab-notifications"
+- assertVisible:
+    id: "notifications-screen"
+- tapOn:
+    id: "tab-index"
+- assertVisible:
+    id: "home-screen"
+- tapOn:
+    id: "module-book"
+- assertVisible:
+    id: "book-screen"
+- takeScreenshot: patient-05-book
+- tapOn:
+    id: "back"
+- assertVisible:
+    id: "home-screen"
+
+# The session survives a restart (no onboarding, no login), then log out.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 120000
+- tapOn:
+    id: "tab-profile"
+- assertVisible:
+    id: "profile-screen"
+- takeScreenshot: patient-06-profile
+# Centred, so the row is clear of the tab bar (a row behind the bar still counts as "visible").
+- scrollUntilVisible:
+    element:
+      id: "menu-logout"
+    centerElement: true
+- tapOn:
+    id: "menu-logout"
+- tapOn:
+    id: "confirm-yes"
+- extendedWaitUntil:
+    visible:
+      id: "login-screen"
+    timeout: 15000

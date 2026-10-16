@@ -1,0 +1,9 @@
+# Release signing for the three Dentor Android apps. Copy this file to signing.properties (git-ignored)
+# in the same folder and fill in the values. Never commit signing.properties or the keystore.
+#
+# Path of the keystore: relative to this folder (e.g. dentor-upload.jks), absolute, or starting with ~/
+DENTOR_UPLOAD_STORE_FILE=dentor-upload.jks
+DENTOR_UPLOAD_STORE_PASSWORD=
+# The alias of the key inside the keystore (keytool -list -keystore <file> shows it)
+DENTOR_UPLOAD_KEY_ALIAS=
+DENTOR_UPLOAD_KEY_PASSWORD=

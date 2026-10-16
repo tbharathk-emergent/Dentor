@@ -22,7 +22,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { EmptyState, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { EmptyState, Figures, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 import { cn } from '@/lib/cn'
 
 const CATEGORIES = [
@@ -610,20 +610,20 @@ export default function Inventory() {
   const [deleteSupplier, setDeleteSupplier] = useState<Doc | null>(null)
   const [receiving, setReceiving] = useState<string | null>(null)
 
-  const { data: itemData, isLoading: itemsLoading } = useList('inventory_items', {
+  const { data: itemData, load: itemsLoad } = useList('inventory_items', {
     q: tab === 'items' ? q : '', ...(category ? { category } : {}), sort: 'created_at', order: 'desc', limit: 500,
   })
   const items = itemData?.items ?? []
-  const { data: supplierData, isLoading: suppliersLoading } = useList('inventory_suppliers', {
+  const { data: supplierData, load: suppliersLoad } = useList('inventory_suppliers', {
     q: tab === 'suppliers' ? q : '', sort: 'created_at', order: 'desc', limit: 200,
   })
   const suppliers = supplierData?.items ?? []
-  const { data: movementData, isLoading: movementsLoading } = useList('inventory_movements', {
+  const { data: movementData, load: movementsLoad } = useList('inventory_movements', {
     q: tab === 'movements' ? q : '', ...(moveType ? { type: moveType } : {}),
     sort: 'created_at', order: 'desc', limit: 500,
   })
   const movements = movementData?.items ?? []
-  const { data: purchaseData, isLoading: purchasesLoading } = useList('inventory_purchases', {
+  const { data: purchaseData, load: purchasesLoad } = useList('inventory_purchases', {
     q: tab === 'purchases' ? q : '', sort: 'created_at', order: 'desc', limit: 500,
   })
   const purchases = purchaseData?.items ?? []
@@ -907,23 +907,25 @@ export default function Inventory() {
         actions={headerAction}
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5 sm:gap-3">
+      {/* On another tab the items list is not on screen, so its failure is reported with the figures. */}
+      <Figures load={itemsLoad} what={tab === 'items' ? undefined : 'the stock figures'} className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5 sm:gap-3">
         <StatCard label="Total items" value={kpis.total} icon={<Boxes className="h-5 w-5" />} onClick={() => { setTab('items'); setStockFilter('') }} />
         <StatCard label="Low stock" value={kpis.low} icon={<AlertTriangle className="h-5 w-5" />} accent="amber" onClick={() => { setTab('items'); setStockFilter('Low Stock') }} />
         <StatCard label="Out of stock" value={kpis.out} icon={<PackageX className="h-5 w-5" />} accent="red" onClick={() => { setTab('items'); setStockFilter('Out of Stock') }} />
         <StatCard label="Stock value" value={fmtINR(kpis.value)} icon={<IndianRupee className="h-5 w-5" />} accent="green" />
         <StatCard label="Expiring ≤ 180 days" value={kpis.expiring} icon={<CalendarClock className="h-5 w-5" />} accent="blue" className="col-span-2 sm:col-span-1" />
-      </div>
+      </Figures>
 
       <Tabs
         className="mb-4"
         value={tab}
         onChange={(k) => { setTab(k as typeof tab); setQ('') }}
         tabs={[
-          { key: 'items', label: 'Items', count: itemData?.total ?? 0 },
-          { key: 'movements', label: 'Movements', count: movementData?.total ?? 0 },
-          { key: 'purchases', label: 'Purchases', count: purchaseData?.total ?? 0 },
-          { key: 'suppliers', label: 'Suppliers', count: supplierData?.total ?? 0 },
+          // No count until its list has arrived: a "0" would say the list is empty.
+          { key: 'items', label: 'Items', count: itemData?.total },
+          { key: 'movements', label: 'Movements', count: movementData?.total },
+          { key: 'purchases', label: 'Purchases', count: purchaseData?.total },
+          { key: 'suppliers', label: 'Suppliers', count: supplierData?.total },
         ]}
       />
 
@@ -965,7 +967,8 @@ export default function Inventory() {
             rows={filteredItems}
             columns={itemColumns}
             rowKey={(i) => i.id}
-            loading={itemsLoading}
+            load={itemsLoad}
+            what="the inventory items"
             onRowClick={(i) => { setEditingItem(i); setItemFormOpen(true) }}
             empty={
               <EmptyState
@@ -1004,7 +1007,8 @@ export default function Inventory() {
             rows={movements}
             columns={movementColumns}
             rowKey={(m) => m.id}
-            loading={movementsLoading}
+            load={movementsLoad}
+            what="the stock movements"
             empty={
               <EmptyState
                 icon={<ArrowLeftRight className="h-6 w-6" />}
@@ -1042,7 +1046,8 @@ export default function Inventory() {
             rows={purchases}
             columns={purchaseColumns}
             rowKey={(p) => p.id}
-            loading={purchasesLoading}
+            load={purchasesLoad}
+            what="the purchases"
             empty={
               <EmptyState
                 icon={<ShoppingCart className="h-6 w-6" />}
@@ -1085,7 +1090,8 @@ export default function Inventory() {
             rows={suppliers}
             columns={supplierColumns}
             rowKey={(s) => s.id}
-            loading={suppliersLoading}
+            load={suppliersLoad}
+            what="the suppliers"
             onRowClick={(s) => { setEditingSupplier(s); setSupplierFormOpen(true) }}
             empty={
               <EmptyState

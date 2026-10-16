@@ -32,7 +32,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
     <div className="relative">
       <select
         ref={ref}
-        className={cn(inputBase, 'h-10 appearance-none pr-9 cursor-pointer', className)}
+        className={cn(inputBase, 'h-10 appearance-none pr-9 cursor-pointer disabled:cursor-default', className)}
         {...props}
       >
         {children}

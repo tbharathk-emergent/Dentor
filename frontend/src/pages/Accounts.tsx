@@ -13,14 +13,17 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { fmtDate, fmtINR, todayISO, useCreate, useDelete, useList, type Doc } from '@/lib/hooks'
+import { fmtDate, fmtINR, loadState, todayISO, useCreate, useDelete, useList, type Doc } from '@/lib/hooks'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Tabs } from '@/components/ui/Tabs'
-import { Avatar, EmptyState, ListSkeleton, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
+import { AccountsDashboard } from '@/components/accounts/AccountsDashboard'
+import { FINANCE_ROLES } from '@/components/layout/nav'
+import { useAuth } from '@/lib/auth'
+import { Avatar, EmptyState, Figures, ListSkeleton, LoadError, Loaded, PageHeader, SearchInput, StatCard } from '@/components/ui/bits'
 
 const PAY_MODES = ['Cash', 'UPI', 'Card', 'Bank Transfer', 'Cheque']
 const DOCTORS = ['Dr. Kumar', 'Dr. Anitha', 'Dr. Gowtham']
@@ -46,8 +49,9 @@ function PatientPicker({
 }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
-  const { data } = useList('patients', { q, limit: 8 })
+  const { data, load } = useList('patients', { q, limit: 8 })
   return (
+    <>
     <Field label="Patient" required error={error}>
       {value ? (
         <div className="flex items-center gap-3 rounded-lg border border-brand-200 bg-brand-50/60 px-3 py-2">
@@ -89,6 +93,8 @@ function PatientPicker({
         </div>
       )}
     </Field>
+    {load.failed && !value && <LoadError compact what="the patient search" load={load} className="mt-2" />}
+    </>
   )
 }
 
@@ -438,6 +444,8 @@ function InvoiceView({ invoice, onClose, onPay }: { invoice: Doc | null; onClose
 
 /* ---------- Main page ---------- */
 export default function Accounts() {
+  const { user: me, isSuperAdmin: superAdmin } = useAuth()
+  const finance = superAdmin || FINANCE_ROLES.includes(me?.role ?? '')
   const [params, setParams] = useSearchParams()
   const [tab, setTab] = useState(params.get('tab') || 'invoices')
   const [q, setQ] = useState('')
@@ -457,19 +465,22 @@ export default function Accounts() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const { data: summary } = useQuery<Record<string, any>>({
+  const summaryQuery = useQuery<Record<string, any>>({
     queryKey: ['accounts-summary'],
     queryFn: () => api.get('/api/accounts/summary'),
   })
+  const summary = summaryQuery.data
 
-  const { data: invData, isLoading: invLoading } = useList('invoices', {
+  const { data: invData, load: invLoad } = useList('invoices', {
     q, ...(status ? { status } : {}), sort: 'date', order: 'desc', limit: 300,
   })
-  const { data: payData, isLoading: payLoading } = useList('payments', { q, sort: 'date', order: 'desc', limit: 300 })
+  const { data: payData, load: payLoad } = useList('payments', { q, sort: 'date', order: 'desc', limit: 300 })
 
   const ledgerCode = ledgerPatient?.code
-  const { data: ledgerInv } = useList('invoices', { patientCode: ledgerCode, sort: 'date', order: 'desc' }, { enabled: !!ledgerCode })
-  const { data: ledgerPay } = useList('payments', { patientCode: ledgerCode, sort: 'date', order: 'desc' }, { enabled: !!ledgerCode })
+  const ledgerInvoices = useList('invoices', { patientCode: ledgerCode, sort: 'date', order: 'desc' }, { enabled: !!ledgerCode })
+  const ledgerPayments = useList('payments', { patientCode: ledgerCode, sort: 'date', order: 'desc' }, { enabled: !!ledgerCode })
+  const ledgerInv = ledgerInvoices.data
+  const ledgerPay = ledgerPayments.data
 
   const ledgerTotals = useMemo(() => {
     const billed = (ledgerInv?.items ?? []).reduce((s, i) => s + Number(i.total || 0), 0)
@@ -496,12 +507,14 @@ export default function Accounts() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+      {finance && <AccountsDashboard />}
+
+      <Figures load={loadState(summaryQuery)} what="the billing figures" className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
         <StatCard label="Invoices" value={summary?.invoices ?? '—'} hint={`Total value ${fmtINR(summary?.totalValue)}`} icon={<FileText className="h-5 w-5" />} />
         <StatCard label="Outstanding" value={fmtINR(summary?.outstanding)} hint={`${summary?.invoicesWithBalance ?? 0} invoices with balance due`} icon={<Receipt className="h-5 w-5" />} accent="red" onClick={() => { setTab('invoices'); setStatus('Pending') }} />
         <StatCard label="Collected" value={fmtINR(summary?.collected)} hint={`${summary?.invoicesWithCollections ?? 0} invoices with collections`} icon={<IndianRupee className="h-5 w-5" />} accent="green" />
         <StatCard label="Today's modes" value={(summary?.byMode ?? []).slice(0, 2).map((m: any) => m.mode).join(' · ') || '—'} hint="Most used payment modes" icon={<Wallet className="h-5 w-5" />} accent="blue" />
-      </div>
+      </Figures>
 
       <Tabs
         className="mb-4"
@@ -524,9 +537,8 @@ export default function Accounts() {
             </Select>
           </div>
           <Card>
-            {invLoading ? (
-              <ListSkeleton rows={6} />
-            ) : !invData?.items?.length ? (
+            <Loaded load={invLoad} what="the invoices" skeleton={<ListSkeleton rows={6} />}>
+            {!invData?.items?.length ? (
               <EmptyState icon={<FileText className="h-6 w-6" />} title="No invoices found" message="Create your first invoice to start billing." action={<Button size="sm" onClick={() => setInvoiceOpen(true)}><Plus className="h-4 w-4" /> New Invoice</Button>} />
             ) : (
               <ul className="divide-y divide-slate-100">
@@ -540,7 +552,8 @@ export default function Accounts() {
                       <div className="text-[13px] font-bold text-brand-800">{inv.number}</div>
                       <div className="text-xs text-slate-400">{fmtDate(inv.date)}</div>
                     </div>
-                    <div className="min-w-0 flex-1">
+                    {/* basis-40: on a phone the status and actions wrap below instead of squeezing the name out */}
+                    <div className="min-w-0 flex-1 basis-40">
                       <div className="truncate text-sm font-semibold text-slate-800">{inv.patient}</div>
                       <div className="truncate text-xs text-slate-500">{inv.treatment} · {inv.doctor}</div>
                     </div>
@@ -563,15 +576,15 @@ export default function Accounts() {
                 ))}
               </ul>
             )}
+            </Loaded>
           </Card>
         </>
       )}
 
       {tab === 'payments' && (
         <Card>
-          {payLoading ? (
-            <ListSkeleton rows={6} />
-          ) : !payData?.items?.length ? (
+          <Loaded load={payLoad} what="the payments" skeleton={<ListSkeleton rows={6} />}>
+          {!payData?.items?.length ? (
             <EmptyState icon={<Wallet className="h-6 w-6" />} title="No payments recorded" message="Payments you collect will appear here with receipts." />
           ) : (
             <ul className="divide-y divide-slate-100">
@@ -591,6 +604,7 @@ export default function Accounts() {
               ))}
             </ul>
           )}
+          </Loaded>
         </Card>
       )}
 
@@ -604,8 +618,10 @@ export default function Accounts() {
             />
           </div>
           {ledgerPatient && (
+            <Loaded load={loadState(ledgerInvoices, ledgerPayments)} what="this patient’s ledger" skeleton={<ListSkeleton rows={4} />}>
             <div className="mt-5 space-y-4">
-              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+              {/* One below the other on a phone: three across leaves no room for an amount. */}
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
                 <StatCard label="Total billed" value={fmtINR(ledgerTotals.billed)} />
                 <StatCard label="Total paid" value={fmtINR(ledgerTotals.paid)} accent="green" />
                 <StatCard label="Balance" value={fmtINR(ledgerTotals.balance)} accent={ledgerTotals.balance > 0 ? 'red' : 'green'} />
@@ -646,6 +662,7 @@ export default function Accounts() {
                 )}
               </div>
             </div>
+            </Loaded>
           )}
         </Card>
       )}
