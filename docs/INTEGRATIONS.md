@@ -144,9 +144,10 @@ PATIENT_TEST_ACCOUNTS=tester1@example.com|9000000001|<password>;tester2@example.
 - To also use code login on such an account, list its mobile in `OTP_TEST_MOBILES` as well.
 
 **A clinic to join.** After signing in, a test account must choose a clinic. Only clinics with
-**Settings → Appointments & Queue → Patient app booking** switched on are listed, and production never lists
-demo clinics. For testing, create a dedicated test clinic in the Super Admin console and switch that on, so
-test patients never appear in a real clinic; switch it off (or suspend the clinic) when testing ends.
+**Settings → Appointments & Queue → Patient app booking** switched on (web app, or Clinic rules in the
+Clinic Owner app) are listed. Production never lists the demo clinic to real patients, but test accounts
+do see it, so testers can use the demo clinic (switch Patient app booking on there) without touching a
+real clinic. Test patients a test account registers in a real clinic are visible to that clinic's staff.
 
 While either is on, the Super Admin console (Connected services) and the upgrade check show an amber notice
 with the masked numbers and the number of test logins.

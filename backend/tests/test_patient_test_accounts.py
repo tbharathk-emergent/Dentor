@@ -173,3 +173,27 @@ async def test_console_shows_only_a_count(http, super_headers, monkeypatch):
     body = (await http.get("/api/platform/overview", headers=super_headers)).text
     assert '"patient_test_logins":1' in body.replace(" ", "")
     assert EMAIL not in body and MOBILE not in body and PASSWORD not in body
+
+
+async def test_in_production_only_test_logins_see_the_demo_clinic(http, monkeypatch):
+    from app.db import db
+    from app.routers import patient_portal
+    from tests.test_apps import patient_signup
+    configure(monkeypatch, f"{EMAIL}|{MOBILE}|{PASSWORD}")
+    await sync_patient_test_accounts(db)
+    real = await patient_signup(http, MOBILE2, "Real App User")           # an ordinary patient account
+    monkeypatch.setattr(patient_portal, "IS_PROD", True)
+    demo = await db.clinics.find_one({"is_demo": True})
+    demo_id = str(demo["_id"])
+
+    hr = bearer(real["access_token"])
+    assert demo_id not in {c["id"] for c in (await http.get("/api/patient/clinics", headers=hr)).json()["items"]}
+    refused = await http.post("/api/patient/profiles/join", headers=hr, json={"clinic_id": demo_id, "age": 40, "gender": "Male"})
+    assert refused.status_code == 404
+
+    ht = bearer((await login(http, EMAIL, PASSWORD)).json()["access_token"])
+    assert demo_id in {c["id"] for c in (await http.get("/api/patient/clinics", headers=ht)).json()["items"]}
+    joined = await http.post("/api/patient/profiles/join", headers=ht, json={"clinic_id": demo_id, "age": 30, "gender": "Female"})
+    assert joined.status_code == 201, joined.text
+    record = await db.patients.find_one({"mobile": MOBILE})
+    assert record["test_record"] is True and str(record["clinic_id"]) == demo_id

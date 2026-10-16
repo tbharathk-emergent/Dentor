@@ -339,9 +339,14 @@ async def select_profile(body: SelectBody, account: dict = Depends(get_patient_a
                                 continue_session=(account.get("_claims") or {}).get("sid"))
 
 
-async def _booking_clinic(clinic_id: str) -> tuple[dict, TenantDB, dict]:
+def _sees_demo_clinics(account: dict) -> bool:
+    """Production keeps the demo clinic away from real patients; test accounts may use it (docs/INTEGRATIONS.md)."""
+    return not IS_PROD or app_records_only(account)
+
+
+async def _booking_clinic(clinic_id: str, account: dict) -> tuple[dict, TenantDB, dict]:
     clinic = await db.clinics.find_one({"_id": to_object_id(clinic_id)})
-    if not clinic or clinic.get("status") == "Suspended" or (IS_PROD and clinic.get("is_demo")):
+    if not clinic or clinic.get("status") == "Suspended" or (clinic.get("is_demo") and not _sees_demo_clinics(account)):
         raise HTTPException(status_code=404, detail="Clinic not found.")
     tdb = TenantDB(db, str(clinic["_id"]))
     settings = await clinic_settings(tdb)
@@ -376,7 +381,7 @@ async def _create_patient_record(tdb: TenantDB, account: dict, name: str, age, g
 async def clinic_directory(q: str = "", account: dict = Depends(get_patient_account)):
     """Clinics a patient can register with from the app."""
     query: dict = {"status": {"$ne": "Suspended"}}
-    if IS_PROD:
+    if not _sees_demo_clinics(account):
         query["is_demo"] = {"$ne": True}
     if q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
@@ -392,7 +397,7 @@ async def clinic_directory(q: str = "", account: dict = Depends(get_patient_acco
 
 @router.post("/profiles/join", status_code=201, dependencies=[Depends(write_limit)])
 async def join_clinic(body: JoinBody, account: dict = Depends(get_patient_account)):
-    clinic, tdb, _ = await _booking_clinic(body.clinic_id)
+    clinic, tdb, _ = await _booking_clinic(body.clinic_id, account)
     existing = [p async for p in tdb.patients.find({"mobile": {"$regex": f"{account['mobile']}$"}})
                 if same_mobile(p.get("mobile"), account["mobile"]) and may_see_record(account, p)]
     if existing:
@@ -408,7 +413,7 @@ async def join_clinic(body: JoinBody, account: dict = Depends(get_patient_accoun
 
 @router.post("/profiles/family", status_code=201, dependencies=[Depends(write_limit)])
 async def add_family_member(body: FamilyBody, ctx: PatientCtx = Depends(get_patient_ctx)):
-    await _booking_clinic(ctx.tdb.clinic_id)
+    await _booking_clinic(ctx.tdb.clinic_id, ctx.account)
     name = body.name.strip()
     if len(name) < 2:
         raise HTTPException(status_code=400, detail="Enter the family member's name.")
@@ -1091,7 +1096,7 @@ class FetchVerify(FetchBody):
 
 
 async def _fetch_target(account: dict, body: FetchBody) -> tuple[dict, dict, TenantDB]:
-    clinic, tdb, _ = await _booking_clinic(body.clinic_id)
+    clinic, tdb, _ = await _booking_clinic(body.clinic_id, account)
     patient = await tdb.patients.find_one({"code": body.patient_code.strip().upper()})
     if not patient or not normalize_mobile(patient.get("mobile")):
         raise HTTPException(status_code=404, detail="No patient with that ID at this clinic. Check the ID on your card or bill.")
