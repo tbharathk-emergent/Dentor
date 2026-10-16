@@ -76,7 +76,7 @@ def crud_router(
     async def create_item(payload: dict, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
         check(user, write_roles, "add to")
         col = tdb[name]
-        for key in ("id", "_id", "clinic_id"):
+        for key in ("id", "_id", "clinic_id", "test_record"):
             payload.pop(key, None)
         if validate_user:
             await validate_user(tdb, user, payload, None)
@@ -97,7 +97,7 @@ def crud_router(
     async def update_item(item_id: str, payload: dict, user: dict = Depends(require_staff), tdb: TenantDB = Depends(get_tenant)):
         check(user, write_roles, "change")
         col = tdb[name]
-        for key in ("id", "_id", "clinic_id", "created_at", "created_by"):
+        for key in ("id", "_id", "clinic_id", "created_at", "created_by", "test_record"):
             payload.pop(key, None)
         existing = None
         if validate or after_write or validate_user:

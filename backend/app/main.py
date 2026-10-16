@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import CORS_ORIGINS, IS_PROD, SEED_DEMO, validate_production_config
 from .db import db
 from .migrate import ensure_tenancy
+from .test_accounts import sync_patient_test_accounts
 from .hooks import after_appointment, after_consent, after_conversation, after_invoice, after_prescription
 from .routers import (
     onboarding,
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     if SEED_DEMO and demo_clinic_id:
         await ensure_seed(TenantDB(db, demo_clinic_id))
         await seed_products(db)
+    await sync_patient_test_accounts(db)  # PATIENT_TEST_ACCOUNTS (off when empty)
     # scheduled offers to patients go out within a minute of their time (routers/engagement.py)
     stop = asyncio.Event()
     offers_task = asyncio.create_task(engagement.offer_loop(stop))

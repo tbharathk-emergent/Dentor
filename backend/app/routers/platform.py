@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import SUPER_ADMIN_ROLE, hash_password, is_super_admin, require_super_admin
+from .. import config as _config
 from ..config import EMAIL_PROVIDER, NOTIFICATION_RETENTION_DAYS, SMS_PROVIDER
 from ..db import db
 from ..email_codes import email_configured, send_email_message
 from ..notify import push_configured
-from ..otp import sms_configured
+from ..otp import is_test_mobile, masked_mobile, sms_configured
+from ..test_accounts import SOURCE as TEST_SOURCE
 from ..roles import CONSULTANT, STAFF_ROLE_OPTIONS
 from ..rules import check_password_strength, clinic_settings
 from ..seed import seed_reference
@@ -147,6 +149,10 @@ async def platform_overview():
         "integrations": {
             "sms": sms_configured(),          # off: patients cannot sign up or use one-time codes
             "sms_test_mode": SMS_PROVIDER == "console",  # codes are shown, not sent (development)
+            # testing aids (docs/INTEGRATIONS.md), shown masked while they are on: the fixed code's numbers, and
+            # how many test patient logins PATIENT_TEST_ACCOUNTS made active
+            "otp_test_mobiles": [masked_mobile(m) for m in _config.OTP_TEST_MOBILES] if is_test_mobile(next(iter(_config.OTP_TEST_MOBILES), "")) else None,
+            "patient_test_logins": await db.patient_accounts.count_documents({"test_source": TEST_SOURCE, "status": {"$ne": "Disabled"}}),
             "email": email_configured(),      # off: no password reset by email, no staff sign-up, no application emails
             "email_test_mode": EMAIL_PROVIDER == "console",  # codes are logged and shown, not sent (development)
             "push": push_configured(),        # off: notifications stay inside the apps

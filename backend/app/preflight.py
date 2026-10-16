@@ -27,7 +27,8 @@ from .config import (
     NOTIFICATION_RETENTION_DAYS, OWNER_DEFAULT_PASSWORD, OWNER_EMAIL, SEED_DEMO, SMS_PROVIDER,
 )
 from .notify import push_configured
-from .otp import sms_configured
+from . import config as _config
+from .otp import is_test_mobile, masked_mobile, sms_configured
 from .roles import CLINIC_ADMIN_ROLES, CLINIC_OWNER, CONSULTANT, STAFF_ROLE_OPTIONS
 
 # Demo logins whose passwords are printed in the README. Harmless on a developer's machine,
@@ -112,6 +113,12 @@ async def build_report(db) -> dict:
         to_know.append("No SMS gateway (SMS_PROVIDER): patient sign-up, code login and reset by code are refused; password login works.")
     elif SMS_PROVIDER == "console":
         to_know.append("SMS is in test mode: codes are shown in the app and the server log, not sent.")
+    if is_test_mobile(next(iter(_config.OTP_TEST_MOBILES), "")):
+        to_know.append(f"A fixed test verification code is ON for {', '.join(masked_mobile(m) for m in _config.OTP_TEST_MOBILES)} "
+                       "(OTP_TEST_MOBILES / OTP_TEST_CODE). Remove both settings and restart the API when testing is finished.")
+    if _config.PATIENT_TEST_ACCOUNTS:
+        to_know.append(f"{len(_config.PATIENT_TEST_ACCOUNTS)} test patient login(s) are configured (PATIENT_TEST_ACCOUNTS). "
+                       "Remove the setting and restart the API when testing is finished: their accounts are then disabled.")
     if not push_configured():
         to_know.append("No push service (PUSH_PROVIDER): notifications appear inside the apps only.")
     to_know.append(

@@ -1,0 +1,38 @@
+// After a release build, copies the APK / AAB into mobile/release-builds/<App name>/ under a clear name,
+// e.g. Dentor-Clinic-Owner-v1.0-1-20261016-1130.apk. Shared by the three apps; applied at the end of
+// mobile/apps/<app>/android/app/build.gradle. The folder is git-ignored. Nothing is deleted: every build
+// adds new, time-stamped files. A build signed with the public debug key (no upload key set up, see
+// mobile/signing/README.md) gets "-DEBUG-KEY" in its name so it is never mistaken for a store build.
+
+def appNames = [
+    'in.dentor.owner'     : 'Dentor-Clinic-Owner',
+    'in.dentor.consultant': 'Dentor-Consultant',
+    'in.dentor.patient'   : 'Dentor-Patient',
+]
+def outputRoot = new File(projectDir, '../../../../release-builds').canonicalFile
+
+afterEvaluate {
+    def config = android.defaultConfig
+    def label = appNames[config.applicationId] ?: config.applicationId
+    def stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern('yyyyMMdd-HHmm'))
+    def keyNote = project.ext.has('dentorUploadSigning') && project.ext.dentorUploadSigning ? '' : '-DEBUG-KEY'
+    def baseName = "${label}-v${config.versionName}-${config.versionCode}-${stamp}${keyNote}"
+    def target = new File(outputRoot, label)
+
+    def copyApk = tasks.register('copyReleaseApk', Copy) {
+        description = "Copies the release APK to ${target}"
+        from(layout.buildDirectory.file('outputs/apk/release/app-release.apk'))
+        into(target)
+        rename { "${baseName}.apk" }
+        doLast { logger.lifecycle("Release APK copied to ${new File(target, baseName + '.apk')}") }
+    }
+    def copyAab = tasks.register('copyReleaseBundle', Copy) {
+        description = "Copies the release AAB to ${target}"
+        from(layout.buildDirectory.file('outputs/bundle/release/app-release.aab'))
+        into(target)
+        rename { "${baseName}.aab" }
+        doLast { logger.lifecycle("Release AAB copied to ${new File(target, baseName + '.aab')}") }
+    }
+    tasks.named('assembleRelease') { finalizedBy copyApk }
+    tasks.named('bundleRelease') { finalizedBy copyAab }
+}

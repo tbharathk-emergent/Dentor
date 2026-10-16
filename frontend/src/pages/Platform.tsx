@@ -52,7 +52,7 @@ interface PlatformOverview {
   billed: number
   collected: number
   /** What is connected outside Dentor for the mobile apps. Missing from an older API. */
-  integrations?: { sms: boolean; sms_test_mode: boolean; email?: boolean; email_test_mode?: boolean; push: boolean; notification_retention_days: number }
+  integrations?: { sms: boolean; sms_test_mode: boolean; otp_test_mobiles?: string[] | null; patient_test_logins?: number; email?: boolean; email_test_mode?: boolean; push: boolean; notification_retention_days: number }
 }
 
 export default function Platform() {
@@ -335,6 +335,7 @@ function ConnectedServices({ status }: { status: PlatformOverview['integrations'
         },
   ]
   return (
+    <>
     <section aria-label="Connected services" className="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
       {services.map((service) => (
         <div
@@ -353,6 +354,31 @@ function ConnectedServices({ status }: { status: PlatformOverview['integrations'
         </div>
       ))}
     </section>
+    {/* testing aids (OTP_TEST_MOBILES / OTP_TEST_CODE, PATIENT_TEST_ACCOUNTS): never forgotten while they are on */}
+    {(!!status.otp_test_mobiles?.length || !!status.patient_test_logins) && (
+      <p data-testid="otp-test-warning" role="status" className="-mt-2 mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs leading-relaxed text-amber-900">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <span>
+          {!!status.otp_test_mobiles?.length && (
+            <>
+              A fixed test verification code is on for {status.otp_test_mobiles.length === 1 ? 'the patient number' : 'the patient numbers'}{' '}
+              <b>{status.otp_test_mobiles.join(', ')}</b>. Anyone with one of these numbers and the code can sign in to its test
+              patient account.{' '}
+            </>
+          )}
+          {!!status.patient_test_logins && (
+            <>
+              {status.patient_test_logins === 1 ? '1 test patient login is' : `${status.patient_test_logins} test patient logins are`} active
+              from the server settings.{' '}
+            </>
+          )}
+          Remove {[...(status.otp_test_mobiles?.length ? ['OTP_TEST_MOBILES', 'OTP_TEST_CODE'] : []), ...(status.patient_test_logins ? ['PATIENT_TEST_ACCOUNTS'] : [])]
+            .join(', ').replace(/, ([^,]*)$/, ' and $1')}{' '}
+          on the server and restart the API when testing is finished.
+        </span>
+      </p>
+    )}
+    </>
   )
 }
 

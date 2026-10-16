@@ -156,8 +156,8 @@ async def test_the_console_is_told_which_outside_services_are_connected(http, su
     from app import email_codes
 
     status = (await http.get("/api/platform/overview", headers=super_headers)).json()["integrations"]
-    assert status == {"sms": True, "sms_test_mode": True, "email": True, "email_test_mode": True, "push": False,
-                      "notification_retention_days": 180}
+    assert status == {"sms": True, "sms_test_mode": True, "otp_test_mobiles": None, "patient_test_logins": 0, "email": True, "email_test_mode": True,
+                      "push": False, "notification_retention_days": 180}
     monkeypatch.setattr(otp, "SMS_PROVIDER", "")
     monkeypatch.setattr(platform, "SMS_PROVIDER", "")
     status = (await http.get("/api/platform/overview", headers=super_headers)).json()["integrations"]

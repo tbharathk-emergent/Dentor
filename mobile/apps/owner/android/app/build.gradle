@@ -144,3 +144,6 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// After a release build, copy the APK / AAB to mobile/release-builds/<App name>/ (mobile/scripts/release-output.gradle).
+apply from: file('../../../../scripts/release-output.gradle')

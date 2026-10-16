@@ -307,7 +307,44 @@ Check by name in phase 0 (values hidden). No new variable is **required** by the
 | `EMAIL_PROVIDER`, `EMAIL_WEBHOOK_URL`, `EMAIL_WEBHOOK_TOKEN` | no (new) | password reset by email, staff sign-up, application emails | add when an email service exists |
 | `SMS_PROVIDER`, `SMS_WEBHOOK_URL`, `SMS_WEBHOOK_TOKEN` | no (new) | **patient sign-up and code login** | add when an SMS gateway exists |
 | `PUSH_PROVIDER`, `PUSH_WEBHOOK_URL`, `PUSH_WEBHOOK_TOKEN` | no (new) | phone alerts | later |
+| `OTP_TEST_MOBILES`, `OTP_TEST_CODE`, `PATIENT_TEST_ACCOUNTS` | no (new) | testing aids: a fixed code for test numbers, and test patient logins; see below | unset (off) |
 | `NOTIFICATION_RETENTION_DAYS`, `REFRESH_TOKEN_DAYS`, `PATIENT_ACCESS_MINUTES`, `OTP_TTL_SECONDS`, `OTP_MAX_PER_HOUR`, `MAX_BODY_BYTES`, `JWT_EXPIRE_MINUTES` | no | tuning | defaults 180, 30, 60, 300, 5, 16 MB, 720 |
+
+### Testing aids: switch on and off 🔴 CHANGES PRODUCTION (separate approval each time)
+
+Needs the release that contains them. Details: `docs/INTEGRATIONS.md`, section 2. Use dedicated numbers
+and emails no real patient has. Type the values in the editor; do not paste them into chat, tickets or
+shell history.
+
+```sh
+# on: add the lines you need, then restart
+sudo cp -p "$APP_DIR/.env" "$APP_DIR/.env.bak-$(date +%Y%m%d-%H%M)"
+sudo nano "$APP_DIR/.env"
+#   OTP_TEST_MOBILES=<number>,<number>      fixed code for these numbers (with the next line)
+#   OTP_TEST_CODE=<6 digits>
+#   PATIENT_TEST_ACCOUNTS=<email>|<mobile>|<password>;<email>|<mobile>|<password>
+sudo grep -cE '^(OTP_TEST_MOBILES|OTP_TEST_CODE|PATIENT_TEST_ACCOUNTS)=' "$APP_DIR/.env"   # counts lines, shows no values
+sudo systemctl restart "$SERVICE" && sleep 3 && systemctl is-active "$SERVICE"
+sudo journalctl -u "$SERVICE" -n 40 --no-pager | grep -E 'OTP_TEST|PATIENT_TEST|Test patient logins' || echo "nothing reported"
+```
+
+Check: the Super Admin console's Connected services shows the amber notice (masked numbers, number of test
+logins). "Test patient logins: N ready … M skipped" in the log: a skipped entry belongs to a real patient.
+In the patient app, sign in with a test email or mobile and its password; sign up or log in by code with a
+test number and the code. Another number still needs a real SMS.
+
+```sh
+# off: remove the lines, then restart
+sudo cp -p "$APP_DIR/.env" "$APP_DIR/.env.bak-$(date +%Y%m%d-%H%M)"
+sudo sed -i '/^OTP_TEST_MOBILES=/d; /^OTP_TEST_CODE=/d; /^PATIENT_TEST_ACCOUNTS=/d' "$APP_DIR/.env"
+sudo grep -cE '^(OTP_TEST_MOBILES|OTP_TEST_CODE|PATIENT_TEST_ACCOUNTS)=' "$APP_DIR/.env"   # must print 0
+sudo systemctl restart "$SERVICE" && sleep 3 && systemctl is-active "$SERVICE"
+```
+
+Check: the amber notice is gone; accounts from `PATIENT_TEST_ACCOUNTS` are now disabled. Delete accounts
+made with the fixed code in the patient app (Profile → delete account); otherwise they stay limited to
+their own test records but can still sign in with their password. Deleting an account keeps the patient
+records it registered at clinics; have the front desk delete those test patients.
 
 ## Who does what
 

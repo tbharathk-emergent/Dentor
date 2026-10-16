@@ -27,14 +27,16 @@ from ..notify import (
 )
 from ..roles import CLINIC_ADMIN_ROLES
 from ..email_codes import normalize_email, read_email_ticket, send_email_code, verify_email_code
-from ..otp import normalize_mobile, read_ticket, request_otp, same_mobile, verify_otp
+from ..otp import is_test_mobile, normalize_mobile, read_ticket, request_otp, same_mobile, verify_otp
 from ..patient_auth import (
     PatientCtx,
+    app_records_only,
     get_patient_account,
     get_patient_ctx,
     issue_patient_tokens,
     list_profiles,
     load_profile,
+    may_see_record,
     public_account,
 )
 from ..rules import ACTIVE_APPT_STATUSES, clinic_settings, validate_appointment
@@ -51,7 +53,7 @@ write_limit = rate_limit("patient-write", 40, 60)
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_PHOTO_CHARS = 2_000_000
-HIDDEN_FIELDS = ("clinic_id", "created_by")
+HIDDEN_FIELDS = ("clinic_id", "created_by", "test_record")
 
 
 def _clean(doc: dict, drop: tuple = ()) -> dict:
@@ -138,8 +140,9 @@ async def otp_request(body: OtpRequest):
     account = await db.patient_accounts.find_one({"mobile": mobile})
     if body.purpose == "signup" and account:
         raise HTTPException(status_code=409, detail="This mobile number is already registered. Log in instead.")
-    if body.purpose in ("login", "reset") and not account:
-        # Do not reveal whether a number is registered: answer as if a code was sent.
+    if body.purpose in ("login", "reset") and not account and not is_test_mobile(mobile):
+        # Do not reveal whether a number is registered: answer as if a code was sent. (A test number gets its
+        # fixed code anyway, so a tester without an account is told to sign up instead of "wrong code".)
         return {"sent": True, "expires_in": 300, "resend_in": 30}
     return await request_otp(db, mobile, body.purpose)
 
@@ -171,6 +174,8 @@ async def signup(body: SignupBody):
     }
     if email:
         doc["email"] = email
+    if is_test_mobile(mobile):
+        doc["test_account"] = True  # made with the fixed test code: only ever sees records it creates in the app
     result = await db.patient_accounts.insert_one(doc)
     account = await db.patient_accounts.find_one({"_id": result.inserted_id})
     return await _auth_response(account, device=body.device)
@@ -352,6 +357,8 @@ async def _create_patient_record(tdb: TenantDB, account: dict, name: str, age, g
         "source": "Patient App", "photo": "", "relation": relation,
         "created_at": stamp, "updated_at": stamp, "created_by": "patient-app",
     }
+    if app_records_only(account):
+        doc["test_record"] = True
     result = await tdb.patients.insert_one(doc)
     await tdb.activities.insert_one({"type": "patient", "message": f"{name} registered through the patient app",
                                      "at": stamp, "user": "patient-app"})
@@ -383,7 +390,7 @@ async def clinic_directory(q: str = "", account: dict = Depends(get_patient_acco
 async def join_clinic(body: JoinBody, account: dict = Depends(get_patient_account)):
     clinic, tdb, _ = await _booking_clinic(body.clinic_id)
     existing = [p async for p in tdb.patients.find({"mobile": {"$regex": f"{account['mobile']}$"}})
-                if same_mobile(p.get("mobile"), account["mobile"])]
+                if same_mobile(p.get("mobile"), account["mobile"]) and may_see_record(account, p)]
     if existing:
         patient = existing[0]
     else:
@@ -401,7 +408,8 @@ async def add_family_member(body: FamilyBody, ctx: PatientCtx = Depends(get_pati
     name = body.name.strip()
     if len(name) < 2:
         raise HTTPException(status_code=400, detail="Enter the family member's name.")
-    mine = [p async for p in ctx.tdb.patients.find({"mobile": {"$regex": f"{ctx.account['mobile']}$"}})]
+    mine = [p async for p in ctx.tdb.patients.find({"mobile": {"$regex": f"{ctx.account['mobile']}$"}})
+            if may_see_record(ctx.account, p)]
     if any(p.get("name", "").strip().lower() == name.lower() for p in mine):
         raise HTTPException(status_code=409, detail=f"{name} is already registered on your number.")
     if len(mine) >= 8:
@@ -1091,7 +1099,8 @@ async def fetch_profile(body: FetchBody, account: dict = Depends(get_patient_acc
     """"FETCH" (patient-app.fig 98:1076): bring in a record registered under another mobile number — a child's,
     or an old number — by its patient ID. A code goes to that record's registered number; nothing is shown before."""
     _, patient, _ = await _fetch_target(account, body)
-    if same_mobile(patient.get("mobile"), account.get("mobile")) or str(account["_id"]) in (patient.get("linked_accounts") or []):
+    if (same_mobile(patient.get("mobile"), account.get("mobile")) and may_see_record(account, patient)) \
+            or str(account["_id"]) in (patient.get("linked_accounts") or []):
         raise HTTPException(status_code=409, detail="This record is already in your profiles.")
     mobile = normalize_mobile(patient.get("mobile"))
     sent = await request_otp(db, mobile, "link")

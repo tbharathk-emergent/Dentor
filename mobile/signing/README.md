@@ -57,6 +57,11 @@ cd mobile/apps/<app>/android         # owner, consultant or patient
 ./gradlew bundleRelease              # → app/build/outputs/bundle/release/app-release.aab
 ```
 
+Each release build is also copied, with a clear name, to `mobile/release-builds/<App name>/`
+(git-ignored), e.g. `mobile/release-builds/Dentor-Clinic-Owner/Dentor-Clinic-Owner-v1.0-1-20261016-1108.apk`.
+Every build adds new time-stamped files; old ones are kept. A build signed with the public debug key gets
+`-DEBUG-KEY` in its name. (`mobile/scripts/release-output.gradle`.)
+
 Release builds talk to the **production** API (`apiUrl` in the app's `env.json`).
 
 ## Other machines and CI

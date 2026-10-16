@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 
 from .auth import TOKEN_OTP_TICKET, create_access_token, decode_token
+from . import config as _config
 from .config import (
     JWT_SECRET,
     OTP_MAX_PER_HOUR,
@@ -28,6 +29,8 @@ from .config import (
 log = logging.getLogger("dentor")
 
 PURPOSES = {"signup", "login", "reset", "link"}
+# Purposes the fixed test code may serve. Never "link": that code proves ownership of ANOTHER record's number.
+TEST_CODE_PURPOSES = {"signup", "login", "reset"}
 MAX_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 30
 TICKET_MINUTES = 10
@@ -60,6 +63,30 @@ def _code_hash(mobile: str, purpose: str, code: str) -> str:
     return hmac.new(JWT_SECRET.encode(), f"{mobile}:{purpose}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
+def is_test_mobile(mobile: str | None) -> bool:
+    """True only for a configured test number, and only while the test code is switched on."""
+    test_mobiles, test_code = _config.OTP_TEST_MOBILES, _config.OTP_TEST_CODE
+    if not test_mobiles or not test_code or _config.otp_test_settings_problem(test_mobiles, test_code):
+        return False
+    candidate = str(mobile or "")
+    return any([hmac.compare_digest(candidate, m) for m in test_mobiles])
+
+
+def masked_mobile(mobile: str) -> str:
+    return f"******{mobile[-4:]}" if mobile else ""
+
+
+async def _test_number_is_taken(db, mobile: str) -> bool:
+    """The fixed code must never open a real person's records: refuse it when the number is on any patient record
+    the test account did not create itself (registered by clinic staff, or made in the app by someone else and
+    later moved to this number), or on a patient-app account that was not created as the test account."""
+    async for p in db.patients.find({"mobile": {"$regex": f"{mobile}$"}}, {"mobile": 1, "created_by": 1, "test_record": 1}):
+        if same_mobile(p.get("mobile"), mobile) and not (p.get("created_by") == "patient-app" and p.get("test_record") is True):
+            return True
+    account = await db.patient_accounts.find_one({"mobile": mobile}, {"test_account": 1})
+    return bool(account and not account.get("test_account"))
+
+
 def sms_configured() -> bool:
     return SMS_PROVIDER == "console" or (SMS_PROVIDER == "webhook" and bool(SMS_WEBHOOK_URL))
 
@@ -90,7 +117,8 @@ async def _deliver(mobile: str, code: str, purpose: str) -> None:
 async def request_otp(db, mobile: str, purpose: str) -> dict:
     if purpose not in PURPOSES:
         raise HTTPException(status_code=400, detail="Unknown verification purpose.")
-    if not sms_configured():
+    use_test_code = is_test_mobile(mobile) and purpose in TEST_CODE_PURPOSES
+    if not use_test_code and not sms_configured():
         raise HTTPException(
             status_code=503,
             detail="Verification codes are not available yet: this server has no SMS provider configured.",
@@ -109,14 +137,23 @@ async def request_otp(db, mobile: str, purpose: str) -> dict:
                 headers={"Retry-After": str(int(wait) + 1)},
             )
 
-    code = f"{secrets.randbelow(10 ** 6):06d}"
+    if use_test_code and await _test_number_is_taken(db, mobile):
+        log.warning("Test verification code refused for %s: the number belongs to a real patient record or account.",
+                    masked_mobile(mobile))
+        raise HTTPException(status_code=502, detail="We could not send the verification code. Please try again.")
+
+    code = _config.OTP_TEST_CODE if use_test_code else f"{secrets.randbelow(10 ** 6):06d}"
     await db.otp_codes.insert_one({
         "mobile": mobile, "purpose": purpose, "code_hash": _code_hash(mobile, purpose, code),
         "attempts": 0, "consumed": False,
         "created_at": now, "expires_at": now + timedelta(seconds=OTP_TTL_SECONDS),
     })
-    await _deliver(mobile, code, purpose)
     result = {"sent": True, "expires_in": OTP_TTL_SECONDS, "resend_in": RESEND_COOLDOWN_SECONDS}
+    if use_test_code:
+        # no SMS, no code in the answer or the log: the tester already knows it
+        log.warning("Test verification code issued for %s (%s).", masked_mobile(mobile), purpose)
+        return result
+    await _deliver(mobile, code, purpose)
     if SMS_PROVIDER == "console":
         result["dev_otp"] = code  # development convenience; impossible in production (see config)
     return result

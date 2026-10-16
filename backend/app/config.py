@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 
@@ -84,6 +85,73 @@ EMAIL_WEBHOOK_TOKEN = os.getenv("EMAIL_WEBHOOK_TOKEN", "").strip()
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "300"))
 OTP_MAX_PER_HOUR = int(os.getenv("OTP_MAX_PER_HOUR", "5"))
 
+# A fixed verification code for dedicated test mobile numbers (patient app testing without an SMS gateway).
+# Off unless BOTH are set. OTP_TEST_MOBILES is a comma-separated list. Only for sign-up, code login and password
+# reset, never for "Fetch"; refused for a number that belongs to a staff-registered patient record or to a non-test
+# account; the code is never returned or logged. Remove both lines and restart the API to turn it off.
+# See docs/INTEGRATIONS.md.
+MAX_TEST_ENTRIES = 20
+
+
+def parse_test_mobiles(raw: str) -> list[str]:
+    return [m.strip() for m in (raw or "").split(",") if m.strip()]
+
+
+OTP_TEST_MOBILES = parse_test_mobiles(os.getenv("OTP_TEST_MOBILES", ""))
+OTP_TEST_CODE = os.getenv("OTP_TEST_CODE", "").strip()
+
+
+def _is_indian_mobile(mobile: str) -> bool:
+    return len(mobile) == 10 and mobile.isdigit() and mobile[0] in "6789"
+
+
+def otp_test_settings_problem(mobiles: list[str], code: str) -> str | None:
+    """Why the test-code settings are unusable, or None when both are empty (off) or both are valid."""
+    if not mobiles and not code:
+        return None
+    if not mobiles or not code:
+        return "OTP_TEST_MOBILES and OTP_TEST_CODE must be set together (or both left empty to keep the test code off)."
+    if len(mobiles) > MAX_TEST_ENTRIES:
+        return f"OTP_TEST_MOBILES allows at most {MAX_TEST_ENTRIES} numbers."
+    if not all(_is_indian_mobile(m) for m in mobiles):
+        return "OTP_TEST_MOBILES must be 10-digit Indian mobile numbers separated by commas (no +91, spaces inside a number, or other separators)."
+    if len(set(mobiles)) != len(mobiles):
+        return "OTP_TEST_MOBILES lists the same number twice."
+    if not (len(code) == 6 and code.isdigit()):
+        return "OTP_TEST_CODE must be exactly 6 digits."
+    return None
+
+
+# Test patient logins (patient app testing): "email|mobile|password" entries separated by ";". At start-up the API
+# creates or updates one ordinary patient account per entry (password stored only as a hash) marked as a test
+# account, so it signs in through the normal login with the email or the mobile and only ever sees records it
+# creates in the app. An entry whose email or number belongs to a real patient is skipped. Accounts made this way
+# are disabled again when their entry is removed. Empty = off. See docs/INTEGRATIONS.md.
+def parse_test_accounts(raw: str) -> tuple[list[dict], str | None]:
+    """The configured test accounts, and why the setting is unusable (None when it is fine or empty)."""
+    entries = [e.strip() for e in (raw or "").split(";") if e.strip()]
+    accounts: list[dict] = []
+    for number, entry in enumerate(entries, 1):
+        parts = [p.strip() for p in entry.split("|")]
+        if len(parts) != 3:
+            return [], f"PATIENT_TEST_ACCOUNTS entry {number} must be email|mobile|password (passwords cannot contain | or ;)."
+        email, mobile, password = parts[0].lower(), parts[1], parts[2]
+        if not re.match(r"^[^@\s|;]+@[^@\s|;]+\.[^@\s|;]+$", email):
+            return [], f"PATIENT_TEST_ACCOUNTS entry {number}: the email is not valid."
+        if not _is_indian_mobile(mobile):
+            return [], f"PATIENT_TEST_ACCOUNTS entry {number}: the mobile must be a 10-digit Indian number (no +91)."
+        if len(password) < 8 or not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
+            return [], f"PATIENT_TEST_ACCOUNTS entry {number}: the password needs at least 8 characters with a letter and a number."
+        accounts.append({"email": email, "mobile": mobile, "password": password})
+    if len(accounts) > MAX_TEST_ENTRIES:
+        return [], f"PATIENT_TEST_ACCOUNTS allows at most {MAX_TEST_ENTRIES} accounts."
+    if len({a["email"] for a in accounts}) != len(accounts) or len({a["mobile"] for a in accounts}) != len(accounts):
+        return [], "PATIENT_TEST_ACCOUNTS lists the same email or mobile twice."
+    return accounts, None
+
+
+PATIENT_TEST_ACCOUNTS, _TEST_ACCOUNTS_PROBLEM = parse_test_accounts(os.getenv("PATIENT_TEST_ACCOUNTS", ""))
+
 # Push delivery. "webhook" POSTs {devices: [{token, platform}], title, body, data} to
 # PUSH_WEBHOOK_URL (your FCM / APNs adapter); empty keeps notifications in-app only.
 PUSH_PROVIDER = os.getenv("PUSH_PROVIDER", "").strip().lower()
@@ -127,6 +195,10 @@ def super_admin_bootstrap_password() -> str:
 
 def validate_production_config() -> None:
     """Fail fast instead of booting an unsafe production instance."""
+    # checked in every environment: half-set or malformed test settings must never half-work
+    problem = otp_test_settings_problem(OTP_TEST_MOBILES, OTP_TEST_CODE) or _TEST_ACCOUNTS_PROBLEM
+    if problem:
+        raise RuntimeError(problem)
     if not IS_PROD:
         return
     if JWT_SECRET == _DEV_JWT_SECRET or len(JWT_SECRET) < 32:

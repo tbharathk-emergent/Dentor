@@ -98,6 +98,58 @@ Codes are stored hashed; 5 tries per code; 30 seconds between codes; 5 codes per
 number registered on the record being linked). Numbers are Indian, ten digits, sent with `+91`.
 (Code: `backend/app/otp.py`.)
 
+### Testing aids: fixed code for test numbers, test patient logins
+
+Both are off by default and independent of the SMS and email services, so the patient app can be tested
+before the SMS gateway (Pingbix) is connected. Every other number and account is unchanged.
+
+**Fixed code for test numbers.** When both settings are set, each listed number gets the fixed 6-digit
+code instead of an SMS, for patient sign-up, code login and password reset.
+
+| Variable | Value |
+| --- | --- |
+| `OTP_TEST_MOBILES` | up to 20 ten-digit Indian numbers, comma-separated, no `+91` (numbers no real patient has) |
+| `OTP_TEST_CODE` | exactly 6 digits |
+
+Set both or neither: the API refuses to start with only one, or with a badly formed value.
+
+- No SMS is sent, and the code never appears in an answer or the log (the log shows `******1234` only).
+- Never used for "Fetch" (`link`): that purpose always needs a real SMS to the record's number.
+- Expiry, the 5 wrong-attempt lock, the 30-second resend wait and the 5-per-hour limit all still apply.
+- Refused (a plain "could not send" error) if the number is on any patient record the test account
+  did not create itself, or on a patient account that was not created as a test account.
+- A listed number without an account: sign up in the app with the code first. Code login on it says
+  "No account found for this number. Please sign up."
+- An account created with the fixed code is marked `test_account`. It only ever sees records it created
+  in the app itself (marked `test_record`; staff cannot set that mark). This holds for password login
+  too, and after the settings are removed.
+
+**Test patient logins.** `PATIENT_TEST_ACCOUNTS` lists `email|mobile|password` entries separated by `;`
+(up to 20; a password needs 8+ characters with a letter and a number, and cannot contain `|` or `;`):
+
+```
+PATIENT_TEST_ACCOUNTS=tester1@example.com|9000000001|<password>;tester2@example.com|9000000002|<password>
+```
+
+- At each start-up the API creates or updates one ordinary patient account per entry, with the email and
+  the mobile on the same account and the password stored only as a hash. It signs in through the normal
+  login with the email or the mobile and that password. Nothing bypasses the password check.
+- Each is a test account: it only ever sees records it creates in the app (as above).
+- An entry whose email or number belongs to a real patient (a real account, or a staff-registered record)
+  is skipped, and the log says so with masked values.
+- Changing an entry's password applies at the next restart and ends that account's sessions. Removing an
+  entry (or the whole setting) disables its account and ends its sessions; adding it back enables it again.
+- To also use code login on such an account, list its mobile in `OTP_TEST_MOBILES` as well.
+
+While either is on, the Super Admin console (Connected services) and the upgrade check show an amber notice
+with the masked numbers and the number of test logins.
+
+Anyone who has a test number and the code, or a test email and its password, can sign in to that test
+account. Switch them off when testing ends: remove the lines, restart the API, delete code-made test accounts
+in the patient app, and have the front desk delete the test patients they registered (clinic records stay).
+(Code: `backend/app/otp.py`, `backend/app/test_accounts.py`, `backend/app/patient_auth.py`; tests:
+`backend/tests/test_otp_test_number.py`, `backend/tests/test_patient_test_accounts.py`.)
+
 ### India: DLT
 
 Register the sender id and this exact template with the gateway's DLT portal:

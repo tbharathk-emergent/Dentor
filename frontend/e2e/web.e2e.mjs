@@ -1996,7 +1996,7 @@ await stepOn(saPage, 'Super Admin: a consultant is approved into a chosen clinic
   if (signIn.status !== 200 || signIn.data.user.role !== 'Consultant') fail(`the approved consultant's sign-in answered ${signIn.status}: ${JSON.stringify(signIn.data).slice(0, 200)}`)
 })
 
-await stepOn(saPage, 'Super Admin: the console shows the connected services as /api/platform/overview reports them (SMS and email in test mode here), warns what patients cannot do when SMS is off and what staff cannot do when email is off, alarms nobody when all is connected, and shows nothing for an API that does not report them', async () => {
+await stepOn(saPage, 'Super Admin: the console shows the connected services as /api/platform/overview reports them (SMS and email in test mode here), warns what patients cannot do when SMS is off and what staff cannot do when email is off, shows a masked notice while a fixed test code or test patient logins are on, alarms nobody when all is connected, and shows nothing for an API that does not report them', async () => {
   const { integrations } = await superApi('GET', '/api/platform/overview')
   if (!integrations) fail('/api/platform/overview does not report "integrations"')
   if (!integrations.sms || !integrations.sms_test_mode) fail(`this check runs against the SMS provider "console" (test mode), but the API reports ${JSON.stringify(integrations)}`)
@@ -2044,9 +2044,33 @@ await stepOn(saPage, 'Super Admin: the console shows the connected services as /
       await restore()
     }
   }
+  // The testing aids: a notice with the masked numbers and the number of test logins while they are on, nothing when off.
+  if (integrations.otp_test_mobiles?.length || integrations.patient_test_logins) {
+    fail(`this check expects the testing aids off on the test API, it reports ${JSON.stringify([integrations.otp_test_mobiles, integrations.patient_test_logins])}`)
+  }
+  if (await saPage.getByTestId('otp-test-warning').count()) fail('the test-code notice shows although the testing aids are off')
+  for (const [rewrite, expected, absent] of [
+    [{ otp_test_mobiles: ['******0777', '******0778'] }, ['the patient numbers', '******0777, ******0778', 'Remove OTP_TEST_MOBILES and OTP_TEST_CODE on the server'], 'test patient login'],
+    [{ patient_test_logins: 2 }, ['2 test patient logins are active', 'Remove PATIENT_TEST_ACCOUNTS on the server'], 'verification code'],
+    [{ otp_test_mobiles: ['******0777'], patient_test_logins: 1 }, ['the patient number ******0777', '1 test patient login is active', 'Remove OTP_TEST_MOBILES, OTP_TEST_CODE and PATIENT_TEST_ACCOUNTS'], null],
+  ]) {
+    const restore = await rewriteOverview(rewrite)
+    try {
+      await visit(saPage, '/platform', 'Clinics')
+      const notice = saPage.getByTestId('otp-test-warning')
+      await notice.waitFor()
+      const text = (await notice.innerText()).replace(/\s+/g, ' ')
+      for (const part of expected) if (!text.includes(part)) fail(`the testing notice should say "${part}", it says: ${text}`)
+      if (absent && text.includes(absent)) fail(`the testing notice mentions "${absent}": ${text}`)
+      if (/\d{10}|123456|@/.test(text)) fail('the testing notice shows a full number, a code or an email')
+    } finally {
+      await restore()
+    }
+  }
   // Back to what the server really reports, for the steps that follow.
   await visit(saPage, '/platform', 'Clinics')
   await until(() => servicesShow(integrations))
+  if (await saPage.getByTestId('otp-test-warning').count()) fail('the test-code notice stayed after the test code was off again')
 })
 
 await stepOn(saPage, 'Super Admin: the clinic list equals /api/platform/clinics, and search narrows it through the API', async () => {

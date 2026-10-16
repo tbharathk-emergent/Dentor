@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException
 from .auth import TOKEN_PATIENT, _credentials_error, create_access_token, decode_token, issued_before, oauth2_scheme
 from .config import PATIENT_ACCESS_MINUTES
 from .db import db
-from .otp import same_mobile
+from .otp import same_mobile, is_test_mobile
 from .sessions import issue_refresh_token, new_session_id, session_ended
 from .tenancy import TenantDB
 from .util import to_object_id
@@ -52,6 +52,23 @@ async def get_patient_account(token: str = Depends(oauth2_scheme)) -> dict:
     return account
 
 
+def app_records_only(account: dict) -> bool:
+    """A test account (created with the fixed test code) never sees a record clinic staff registered, even one
+    with the same mobile number: its number was not proven by a real SMS. Also applies to any account while its
+    number is the configured test number."""
+    return bool(account.get("test_account")) or is_test_mobile(account.get("mobile"))
+
+
+def is_test_record(patient: dict) -> bool:
+    """A record the test account created itself in the patient app. "created_by" alone is not enough: staff can
+    later change the mobile on a record another person made in the app. Staff writes cannot set "test_record"."""
+    return patient.get("created_by") == "patient-app" and patient.get("test_record") is True
+
+
+def may_see_record(account: dict, patient: dict) -> bool:
+    return not app_records_only(account) or is_test_record(patient)
+
+
 async def load_profile(account: dict, clinic_id: str | None, patient_id: str | None) -> tuple[dict, dict] | None:
     """Returns (clinic, patient) if this account may act as that patient record, else None."""
     if not clinic_id or not patient_id:
@@ -65,6 +82,8 @@ async def load_profile(account: dict, clinic_id: str | None, patient_id: str | N
         return None
     # a record registered under another number is yours once you have verified it with that number's code ("Fetch")
     if not same_mobile(patient.get("mobile"), account.get("mobile")) and str(account.get("_id")) not in (patient.get("linked_accounts") or []):
+        return None
+    if not may_see_record(account, patient):
         return None
     return clinic, patient
 
@@ -88,6 +107,8 @@ async def list_profiles(account: dict) -> list[dict]:
     async for p in db.patients.find({"$or": [{"mobile": {"$regex": f"{mobile}$"}}, {"linked_accounts": str(account["_id"])}]}):
         clinic = clinics.get(p.get("clinic_id") or "")
         if not clinic or not (same_mobile(p.get("mobile"), mobile) or str(account["_id"]) in (p.get("linked_accounts") or [])):
+            continue
+        if not may_see_record(account, p):
             continue
         out.append({
             "patient_id": str(p["_id"]), "clinic_id": str(clinic["_id"]),
