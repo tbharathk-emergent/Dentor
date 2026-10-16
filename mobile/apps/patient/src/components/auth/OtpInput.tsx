@@ -63,6 +63,7 @@ const styles = StyleSheet.create({
   },
   boxActive: { borderColor: colors.brand600, backgroundColor: colors.brand50 },
   boxInvalid: { borderColor: colors.red },
-  // Invisible but on top: it takes the taps and the typing, the boxes show the digits.
-  input: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, ...font.h2, color: 'transparent', outlineWidth: 0 },
+  // Invisible but on top: it takes the taps and the typing, the boxes show the digits. Transparent text alone
+  // is not enough: some Android keyboards draw the typed digits in their own colour over the first box.
+  input: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, ...font.h2, color: 'transparent', opacity: 0, outlineWidth: 0 },
 })
