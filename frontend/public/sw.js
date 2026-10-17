@@ -103,6 +103,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/api') return
+  // The public legal pages (store listings link to them) are separate HTML pages, not the app: left to the
+  // network, so opening one never replaces the stored shell.
+  if (url.pathname.startsWith('/legal/')) return
 
   if (request.mode === 'navigate') event.respondWith(page(event))
   else if (url.pathname.startsWith('/assets/')) event.respondWith(hashedAsset(request))

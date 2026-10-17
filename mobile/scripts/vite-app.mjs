@@ -1,7 +1,7 @@
 /**
  * Vite configuration shared by the three apps' browser builds (react-native-web).
- * The browser build is for previews and end-to-end tests; it talks to the local API unless
- * DENTOR_API_URL says otherwise. Phones get the native Android/iOS builds.
+ * The browser build is for previews, end-to-end tests and the web versions of the apps (docs/WEB_APPS.md); it
+ * talks to the local API unless DENTOR_API_URL says otherwise. Phones get the native Android/iOS builds.
  */
 import react from '@vitejs/plugin-react'
 import path from 'node:path'

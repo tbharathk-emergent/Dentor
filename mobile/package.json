@@ -12,7 +12,8 @@
     "build:web": "npm run build:web --workspaces --if-present",
     "e2e:patient": "node e2e/patient.e2e.mjs",
     "e2e:consultant": "node e2e/consultant.e2e.mjs",
-    "e2e:owner": "node e2e/owner.e2e.mjs"
+    "e2e:owner": "node e2e/owner.e2e.mjs",
+    "legal": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/legal-pages.mjs"
   },
   "devDependencies": {
     "playwright": "^1.64.0"

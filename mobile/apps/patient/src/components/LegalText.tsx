@@ -6,7 +6,8 @@ import type { LegalDocument } from '@/content/legal'
 export function LegalText({ document, testID }: { document: LegalDocument; testID?: string }) {
   return (
     <View testID={testID} style={styles.wrap}>
-      <Banner tone="amber" icon="alert-triangle" text={document.notice} />
+      {!!document.notice && <Banner tone="amber" icon="alert-triangle" text={document.notice} />}
+      <T variant="tiny" color={colors.textMuted}>Last updated {document.updated}</T>
       {document.sections.map((section) => (
         <View key={section.heading} style={styles.section}>
           <T variant="h3">{section.heading}</T>

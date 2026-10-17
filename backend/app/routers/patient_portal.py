@@ -40,6 +40,7 @@ from ..patient_auth import (
     public_account,
 )
 from ..test_accounts import create_code_test_account
+from ..account_deletion import soft_delete_patient
 from ..rules import ACTIVE_APPT_STATUSES, clinic_settings, validate_appointment
 from ..scheduling import SLOT_TIMES, clinic_now, clinic_today, day_slots, free_chair, is_future, parse_date
 from ..security import check_login_allowed, clear_login_failures, rate_limit, record_login_failure
@@ -1040,12 +1041,11 @@ async def change_password(request: Request, body: ChangePasswordBody, account: d
 
 @router.post("/account/delete", dependencies=[Depends(auth_limit)])
 async def delete_account(body: DeleteAccountBody, account: dict = Depends(get_patient_account)):
-    """Removes the app login. Clinical records stay with the clinic, which must retain them."""
+    """Soft-deletes the app login (app/account_deletion.py): it stops working at once and a Super Admin can restore
+    it. Clinical records stay with the clinic, which must retain them."""
     if not verify_password(body.password, account.get("password_hash", "")):
         raise HTTPException(status_code=400, detail="Password is incorrect.")
-    await revoke_all_sessions(db, "patient", str(account["_id"]))
-    await db.device_tokens.delete_many({"owner_kind": KIND_PATIENT, "owner_id": str(account["_id"])})
-    await db.patient_accounts.delete_one({"_id": account["_id"]})
+    await soft_delete_patient(db, account)
     return {"ok": True}
 
 

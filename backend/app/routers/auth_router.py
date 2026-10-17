@@ -7,6 +7,7 @@ from ..auth import (
     verify_password,
 )
 from .. import device_credentials
+from ..account_deletion import soft_delete_staff
 from ..db import db
 from ..patient_auth import issue_patient_tokens, list_profiles, load_profile, public_account
 from ..roles import CLINIC_APP_ROLES, CLINIC_OWNER, CONSULTANT, PORTAL_ONLY_ROLES
@@ -269,3 +270,17 @@ async def change_password(
     fresh = await db.users.find_one({"email": user["email"]})
     tokens = await _token_response(fresh)
     return {"ok": True, "message": "Password changed.", **tokens}
+
+
+@router.post("/account/delete", dependencies=[Depends(login_burst_limit)])
+async def delete_my_account(request: Request, password: str = Body(..., embed=True), user: dict = Depends(get_current_user)):
+    """"Delete my account" in the Clinic Owner and Consultant apps: soft-deletes this login (app/account_deletion.py).
+    The clinic's records stay; a Super Admin can restore the login."""
+    check_login_allowed(request, user["email"])
+    full = await db.users.find_one({"email": user["email"]})
+    if not verify_password(password, full.get("password_hash", "")):
+        record_login_failure(request, user["email"])
+        raise HTTPException(status_code=400, detail="Password is incorrect.")
+    clear_login_failures(request, user["email"])
+    await soft_delete_staff(db, full)
+    return {"ok": True}

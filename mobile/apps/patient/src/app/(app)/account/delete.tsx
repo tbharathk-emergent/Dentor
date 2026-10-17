@@ -5,10 +5,11 @@ import { useDeleteAccount } from '@/hooks/useAccount'
 import type { PatientSession } from '@/types'
 
 const CONSEQUENCES = [
-  'Your app login is removed. You will be logged out on every device.',
+  'Your app login stops working at once. You will be logged out on every device.',
   'Your dental records, prescriptions, reports and bills stay with the clinic, which keeps them as part of your care.',
   'Appointments you have booked are not cancelled. Call the clinic if you need to change them.',
   'You can sign up again later with the same mobile number to see your records.',
+  'Changed your mind? Dentor support can restore this login, as long as no new account has been made on your number.',
 ]
 
 export default function DeleteAccount() {
@@ -49,7 +50,7 @@ export default function DeleteAccount() {
       back
       footer={<Button testID="delete-submit" label="Delete my account" variant="danger" size="lg" full onPress={ask} />}
     >
-      <Banner tone="red" icon="alert-triangle" text="This removes your login to the app. It cannot be undone." />
+      <Banner tone="red" icon="alert-triangle" text="This deletes your login to the app." />
       <Card style={styles.card}>
         <T variant="h3">What happens</T>
         {CONSEQUENCES.map((line) => (
@@ -79,7 +80,7 @@ export default function DeleteAccount() {
         onClose={() => setConfirming(false)}
         onConfirm={confirmDelete}
         title="Delete your account?"
-        message="Your app login will be removed and you will be logged out. Your records stay with the clinic."
+        message="Your app login will stop working and you will be logged out. Your records stay with the clinic."
         confirmLabel="Delete account"
         danger
         loading={remove.isPending}

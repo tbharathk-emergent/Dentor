@@ -294,7 +294,7 @@ await run.step('sign-up form says what to fix', async () => {
   // the account gets an email, so it can also reset its password by email (step below)
   await type('signup-email', FRESH.email)
   await tap('signup-read-terms')
-  await seeText('legal-sheet', 'Placeholder for the clinic')
+  await seeText('legal-sheet', ['Health information and emergencies', 'Last updated'])
   await tap('sheet-close')
   await gone('legal-sheet')
 })

@@ -85,10 +85,11 @@ async def sync_patient_test_accounts(db) -> dict:
     await db.patient_accounts.update_many({"test_source": CODE_SOURCE, "mobile": {"$in": listed}, "status": "Disabled"},
                                           {"$set": {"status": "Active", "updated_at": now_iso()}})
     disabled = 0
+    # A login its owner deleted (app/account_deletion.py) stays "Deleted", so the Super Admin can still see and restore it.
     async for account in db.patient_accounts.find({"$or": [
         {"test_source": SOURCE, "mobile": {"$nin": ready}},
         {"test_source": CODE_SOURCE, "mobile": {"$nin": listed}},
-    ], "status": {"$ne": "Disabled"}}):
+    ], "status": {"$nin": ["Disabled", "Deleted"]}}):
         await db.patient_accounts.update_one({"_id": account["_id"]}, {"$set": {"status": "Disabled", "updated_at": now_iso()}})
         await revoke_all_sessions(db, "patient", str(account["_id"]))
         disabled += 1

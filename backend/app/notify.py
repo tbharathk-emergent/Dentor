@@ -135,7 +135,7 @@ async def notify_users(db, clinic_id: str, emails: list[str], title: str, body: 
 async def notify_roles(db, clinic_id: str, roles: set[str], title: str, body: str,
                        kind: str = "general", data: dict | None = None) -> None:
     emails = [u["email"] async for u in db.users.find(
-        {"clinic_id": clinic_id, "role": {"$in": list(roles)}, "status": {"$ne": "Inactive"}}, {"email": 1}
+        {"clinic_id": clinic_id, "role": {"$in": list(roles)}, "status": {"$nin": ["Inactive", "Deleted"]}}, {"email": 1}
     )]
     await notify_users(db, clinic_id, emails, title, body, kind, data)
 
@@ -144,7 +144,7 @@ async def notify_front_desk(db, clinic_id: str, title: str, body: str,
                             kind: str = "general", data: dict | None = None) -> None:
     """Everyone who works the reception app for this clinic (all staff logins except consultants)."""
     emails = [u["email"] async for u in db.users.find(
-        {"clinic_id": clinic_id, "role": {"$nin": ["Consultant", "Super Admin"]}, "status": {"$ne": "Inactive"}},
+        {"clinic_id": clinic_id, "role": {"$nin": ["Consultant", "Super Admin"]}, "status": {"$nin": ["Inactive", "Deleted"]}},
         {"email": 1},
     )]
     await notify_users(db, clinic_id, emails, title, body, kind, data)
@@ -159,7 +159,7 @@ async def notify_doctor(db, clinic_id: str, doctor_name: str, title: str, body: 
     if not ids:
         return
     emails = [u["email"] async for u in db.users.find(
-        {"clinic_id": clinic_id, "consultant_id": {"$in": ids}, "status": {"$ne": "Inactive"}}, {"email": 1}
+        {"clinic_id": clinic_id, "consultant_id": {"$in": ids}, "status": {"$nin": ["Inactive", "Deleted"]}}, {"email": 1}
     )]
     await notify_users(db, clinic_id, emails, title, body, kind, data)
 

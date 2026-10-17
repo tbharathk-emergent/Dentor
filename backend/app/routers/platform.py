@@ -12,6 +12,7 @@ from ..email_codes import email_configured, send_email_message
 from ..notify import push_configured
 from ..otp import is_test_mobile, masked_mobile, sms_configured
 from ..test_accounts import SOURCE as TEST_SOURCE
+from ..account_deletion import DELETED, list_deleted, restore
 from ..roles import CONSULTANT, STAFF_ROLE_OPTIONS
 from ..rules import check_password_strength, clinic_settings
 from ..seed import seed_reference
@@ -123,7 +124,7 @@ async def platform_overview():
     """Figures across every clinic, for the super admin console."""
     clinics = await db.clinics.find({}).to_list(None)
     roles: dict[str, int] = {}
-    async for row in db.users.aggregate([{"$group": {"_id": "$role", "n": {"$sum": 1}}}]):
+    async for row in db.users.aggregate([{"$match": {"status": {"$ne": DELETED}}}, {"$group": {"_id": "$role", "n": {"$sum": 1}}}]):
         roles[row["_id"] or "Unassigned"] = row["n"]
     money = await db.invoices.aggregate([{"$group": {
         "_id": None, "billed": {"$sum": {"$ifNull": ["$total", 0]}}, "collected": {"$sum": {"$ifNull": ["$paid", 0]}},
@@ -166,7 +167,8 @@ async def clinic_consultants(clinic_id: str):
     """Consultant profiles of a clinic, for linking a Consultant login."""
     await _get_clinic(clinic_id)
     rows = await db.consultants.find({"clinic_id": clinic_id}).sort("name", 1).to_list(None)
-    linked = {u.get("consultant_id") async for u in db.users.find({"clinic_id": clinic_id, "consultant_id": {"$exists": True}})}
+    linked = {u.get("consultant_id") async for u in db.users.find({"clinic_id": clinic_id, "consultant_id": {"$exists": True},
+                                                                   "status": {"$ne": DELETED}})}
     return {"items": [{"id": str(c["_id"]), "name": c.get("name", ""), "code": c.get("code", ""),
                        "specialty": c.get("specialty", ""), "has_login": str(c["_id"]) in linked} for c in rows]}
 
@@ -249,7 +251,7 @@ async def update_clinic(clinic_id: str, body: ClinicUpdate):
 @router.get("/clinics/{clinic_id}/users")
 async def list_clinic_users(clinic_id: str):
     await _get_clinic(clinic_id)
-    users = await db.users.find({"clinic_id": clinic_id}, {"password_hash": 0, "sessions_valid_from": 0}).sort("created_at", 1).to_list(None)
+    users = await db.users.find({"clinic_id": clinic_id, "status": {"$ne": DELETED}}, {"password_hash": 0, "sessions_valid_from": 0}).sort("created_at", 1).to_list(None)
     return {"items": serialize(users), "total": len(users)}
 
 
@@ -438,3 +440,17 @@ async def answer_ticket(ticket_id: str, body: TicketAnswer, admin: dict = Depend
     await notify_users(db, t.get("clinic_id", ""), [t.get("raised_by", "")], f"Ticket {t.get('code')}: {body.status or 'new reply'}",
                        body.text.strip() or f"Your ticket is {body.status.lower()}.", "ticket", {"ticket_id": str(t["_id"]), "screen": "ticket"})
     return serialize(await db.support_tickets.find_one({"_id": t["_id"]}, {"attachment": 0}))
+
+
+# ------------------------------------------------------------- deleted accounts (app/account_deletion.py)
+
+@router.get("/deleted-accounts")
+async def deleted_accounts():
+    """Logins deleted with "Delete my account" in the apps; each can be restored."""
+    return await list_deleted(db)
+
+
+@router.post("/deleted-accounts/{kind}/{account_id}/restore")
+async def restore_deleted_account(kind: str, account_id: str):
+    await restore(db, kind, account_id)
+    return {"ok": True}

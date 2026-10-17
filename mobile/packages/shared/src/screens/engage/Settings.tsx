@@ -16,6 +16,7 @@ export function SettingsScreen({ scope, email }: { scope: 'owner' | 'consultant'
         items={[
           { key: 'notification-settings', testID: 'settings-notification-settings', title: 'Notification Setting', subtitle: 'Mute, silence, sleep mode', icon: 'bell-off', onPress: () => router.push('/notification-settings') },
           { key: 'change-password', testID: 'settings-change-password', title: 'Password Manager', subtitle: 'Signs out your other devices', icon: 'lock', onPress: () => router.push('/change-password') },
+          { key: 'delete-account', testID: 'settings-delete-account', title: 'Delete Account', subtitle: 'Your login stops working; the clinic keeps its records', icon: 'trash-2', onPress: () => router.push('/delete-account') },
         ]}
       />
       {!!email && <BiometricSetting scope={scope} enrollPath="/api/auth/device/enroll" revokePath="/api/auth/device/revoke" label={email} />}

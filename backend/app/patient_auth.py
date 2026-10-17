@@ -42,7 +42,7 @@ async def get_patient_account(token: str = Depends(oauth2_scheme)) -> dict:
         account = await db.patient_accounts.find_one({"_id": to_object_id(payload["sub"])})
     except HTTPException:
         raise _credentials_error()
-    if not account or account.get("status") == "Disabled":
+    if not account or account.get("status") in ("Disabled", "Deleted"):
         raise _credentials_error()
     if issued_before(payload, account.get("sessions_valid_from")):
         raise _credentials_error()

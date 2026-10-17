@@ -28,6 +28,7 @@ import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Field'
 import { Applications } from '@/components/platform/Applications'
 import { Tickets } from '@/components/platform/Tickets'
+import { DeletedAccounts } from '@/components/platform/DeletedAccounts'
 import { Avatar, EmptyState, Figures, ListSkeleton, LoadError, Loaded, SearchInput, StatCard } from '@/components/ui/bits'
 
 interface Clinic extends Doc {
@@ -171,6 +172,8 @@ export default function Platform() {
         <Tickets />
 
         <Applications clinics={clinics.filter((c) => c.status !== 'Suspended').map((c) => ({ id: c.id, name: String(c.name), code: String(c.code) }))} />
+
+        <DeletedAccounts />
 
         <SearchInput value={q} onChange={setQ} placeholder="Search clinic, code or city…" className="mb-3 sm:max-w-sm" />
 

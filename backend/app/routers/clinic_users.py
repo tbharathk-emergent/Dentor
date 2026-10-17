@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ..account_deletion import DELETED
 from ..auth import SUPER_ADMIN_ROLE, hash_password
 from ..db import db
 from ..roles import CLINIC_OWNER, CONSULTANT, STAFF_ROLE_OPTIONS, is_owner, require_clinic_admin
@@ -77,7 +78,8 @@ async def validate_consultant_link(clinic_id: str, role: str, consultant_id: Opt
     consultant = await db.consultants.find_one({"_id": to_object_id(consultant_id), "clinic_id": clinic_id})
     if not consultant:
         raise HTTPException(status_code=404, detail="Consultant profile not found in this clinic.")
-    query: dict = {"clinic_id": clinic_id, "consultant_id": str(consultant["_id"])}
+    # a deleted login (app/account_deletion.py) no longer holds the profile: a replacement login may be made
+    query: dict = {"clinic_id": clinic_id, "consultant_id": str(consultant["_id"]), "status": {"$ne": DELETED}}
     if exclude_user_id is not None:
         query["_id"] = {"$ne": exclude_user_id}
     if await db.users.find_one(query):
@@ -87,7 +89,7 @@ async def validate_consultant_link(clinic_id: str, role: str, consultant_id: Opt
 
 async def _target(tdb: TenantDB, user_id: str, actor: dict) -> dict:
     user = await tdb.users.find_one({"_id": to_object_id(user_id)})
-    if not user or user.get("role") == SUPER_ADMIN_ROLE:
+    if not user or user.get("role") == SUPER_ADMIN_ROLE or user.get("status") == DELETED:  # deleted: Super Admin restores
         raise HTTPException(status_code=404, detail="Login not found.")
     if user.get("role") == CLINIC_OWNER and not is_owner(actor):
         raise HTTPException(status_code=403, detail="Only the clinic owner can change an owner account.")
@@ -96,7 +98,7 @@ async def _target(tdb: TenantDB, user_id: str, actor: dict) -> dict:
 
 @router.get("")
 async def list_users(actor: dict = Depends(require_clinic_admin), tdb: TenantDB = Depends(get_tenant)):
-    users = await tdb.users.find({}).sort("created_at", 1).to_list(None)
+    users = await tdb.users.find({"status": {"$ne": DELETED}}).sort("created_at", 1).to_list(None)
     return {"items": [await _public(tdb, u) for u in users], "roles": STAFF_ROLE_OPTIONS}
 
 

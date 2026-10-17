@@ -2073,6 +2073,33 @@ await stepOn(saPage, 'Super Admin: the console shows the connected services as /
   if (await saPage.getByTestId('otp-test-warning').count()) fail('the test-code notice stayed after the test code was off again')
 })
 
+await stepOn(saPage, 'Super Admin: a login deleted in the patient app is listed under Deleted accounts, and Restore lets it sign in again', async () => {
+  const who = { name: `Web E2E Deleted ${tail}`, mobile: `7${tail}`, password: `Deleted${tail}` }
+  const otp = await patiently(() => apiCall('POST', '/api/patient/auth/otp/request', { mobile: who.mobile, purpose: 'signup' }))
+  const ticket = (await patiently(() => apiCall('POST', '/api/patient/auth/otp/verify', { mobile: who.mobile, purpose: 'signup', code: otp.data.dev_otp }))).data.ticket
+  const made = await patiently(() => apiCall('POST', '/api/patient/auth/signup', { ticket, name: who.name, password: who.password }))
+  if (made.status !== 201) fail(`could not make the test login: ${made.status}`)
+  const removed = await patiently(() => apiCall('POST', '/api/patient/account/delete', { password: who.password }, made.data.access_token))
+  if (removed.status !== 200) fail(`deleting the test login answered ${removed.status}`)
+  const login = () => patiently(() => apiCall('POST', '/api/patient/auth/login', { identifier: who.mobile, password: who.password }))
+  if ((await login()).status !== 401) fail('a deleted login can still sign in')
+  try {
+    await visit(saPage, '/platform', 'Clinics')
+    const section = saPage.getByTestId('deleted-accounts')
+    const row = section.locator('[data-testid^="deleted-patient-"]').filter({ hasText: who.name })
+    await row.waitFor()
+    if (!(await row.innerText()).includes(`+91 ${who.mobile}`)) fail('the deleted login does not show its number')
+    await row.getByRole('button', { name: 'Restore' }).click()
+    await saPage.getByRole('dialog').getByRole('button', { name: 'Restore' }).click()
+    await row.waitFor({ state: 'detached' })
+    if ((await login()).status !== 200) fail('the restored login cannot sign in')
+  } finally {
+    // leave nothing behind: delete it again (a deleted test login is harmless, and hidden everywhere)
+    const back = await login()
+    if (back.status === 200) await patiently(() => apiCall('POST', '/api/patient/account/delete', { password: who.password }, back.data.access_token))
+  }
+})
+
 await stepOn(saPage, 'Super Admin: the clinic list equals /api/platform/clinics, and search narrows it through the API', async () => {
   const cards = clinicCards()
   const demo = (api) => api.items.find((c) => c.is_demo) ?? api.items[0]
@@ -2488,6 +2515,21 @@ await r.step('PWA: API requests are never answered from the service worker or st
   }
   const online = await page.evaluate(() => fetch('/api/health').then((res) => res.json()))
   if (online.ok !== true) fail('back online, /api/health did not reach the API')
+})
+
+await r.step('PWA: the public legal pages open from the server, are never cached, and leave the stored app shell as it was', async () => {
+  const shellBefore = await page.evaluate(async () => (await caches.match('/index.html'))?.text())
+  for (const file of ['privacy-patient.html', 'terms-patient.html', 'privacy-staff.html', 'terms-staff.html', 'delete-account.html']) {
+    const response = await page.goto(`${APP_URL}/legal/${file}`, { waitUntil: 'domcontentloaded' })
+    if (!response || response.status() !== 200) fail(`/legal/${file} answered ${response?.status()}`)
+    if (response.fromServiceWorker()) fail(`/legal/${file} came through the service worker`)
+    const heading = await page.locator('h1').innerText()
+    if (!heading || !(await page.getByText('IQDS DENTAL INDIA Pvt. Ltd.').count())) fail(`/legal/${file} does not look like a legal page: ${heading}`)
+  }
+  const { cached } = await swState(page)
+  if (cached.some((entry) => entry.startsWith('/legal/'))) fail(`legal pages in the cache: ${cached.filter((e) => e.startsWith('/legal/')).join(', ')}`)
+  const shellAfter = await page.evaluate(async () => (await caches.match('/index.html'))?.text())
+  if (!shellAfter || shellAfter !== shellBefore) fail('opening the legal pages changed the stored app shell')
 })
 
 await r.step('PWA: offline, a reload of the signed-in app still shows the app shell, and it recovers when the connection is back', async () => {

@@ -94,7 +94,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise HTTPException(status_code=403, detail="This area is for clinic staff.")
 
     user = await db.users.find_one({"email": payload["sub"]})
-    if not user or user.get("status") == "Inactive":
+    if not user or user.get("status") in ("Inactive", "Deleted"):
         raise _credentials_error()
     if issued_before(payload, user.get("sessions_valid_from")):
         raise _credentials_error()

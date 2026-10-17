@@ -191,8 +191,8 @@ Android, and iOS allows `http://` only for local addresses.
 
 ## 5. Mobile apps in a browser
 
-Each app also builds for the browser with Vite and react-native-web. This is for fast
-previews and for the end-to-end tests. It is not a deployment target.
+Each app also builds for the browser with Vite and react-native-web: for fast previews, for the
+end-to-end tests, and as the web versions of the apps (publishing them: [`WEB_APPS.md`](WEB_APPS.md)).
 
 | App | Dev server | Port |
 | --- | --- | --- |
